@@ -626,12 +626,26 @@ var App = (function() {
     try {
       var result = await BooklistApi.testGeminiConnection(key, model);
       if (result.success) {
+        if (result.is_fallback && result.model) {
+          var modelSelect = document.getElementById('setting-ai-model');
+          if (modelSelect) {
+            // 若 option 不存在則補上
+            var exists = Array.from(modelSelect.options).some(function(o) { return o.value === result.model; });
+            if (!exists) {
+              var newOpt = document.createElement('option');
+              newOpt.value = result.model;
+              newOpt.textContent = '⚡ ' + result.model + ' (自動切換備援)';
+              modelSelect.appendChild(newOpt);
+            }
+            modelSelect.value = result.model;
+          }
+        }
         if (statusEl) {
           statusEl.innerHTML = '<span style="color: #10b981; font-weight: 600;">' + result.message + '</span>';
         }
       } else {
         if (statusEl) {
-          statusEl.innerHTML = '<span style="color: #ef4444; font-size: 0.72rem; line-height: 1.2;">' + result.message + '</span>';
+          statusEl.innerHTML = '<span style="color: #ef4444; font-size: 0.72rem; line-height: 1.3;">' + result.message + '</span>';
         }
       }
     } catch (err) {

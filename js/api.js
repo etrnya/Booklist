@@ -447,106 +447,160 @@ var BooklistApi = (function() {
   }
 
   /**
-   * 測試 Google Gemini API 連線
+   * 測試 Google Gemini API 連線 (具備 High Demand 自動備援串接)
    */
   async function testGeminiConnection(apiKey, model) {
     var key = (apiKey || getGeminiKey() || '').trim();
-    var m = (model || getSelectedModel() || 'gemini-2.5-flash').trim();
+    var primaryModel = (model || getSelectedModel() || 'gemini-2.5-flash').trim();
 
     if (!key) {
       return { success: false, message: '請先輸入 Gemini API Key' };
     }
 
-    var startTime = performance.now();
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent?key=' + encodeURIComponent(key);
+    // 建立候選嘗試隊列：以選取的模型為首，後接官方高可用備援模型池
+    var candidateModels = [primaryModel];
+    var fallbackPool = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    fallbackPool.forEach(function(m) {
+      if (candidateModels.indexOf(m) === -1) candidateModels.push(m);
+    });
 
-    try {
-      var res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: '請只回覆一個單詞：OK' }]
-          }]
-        })
-      });
+    var lastErrorMessage = '';
 
-      var latency = Math.round(performance.now() - startTime);
+    for (var i = 0; i < candidateModels.length; i++) {
+      var currentM = candidateModels[i];
+      var startTime = performance.now();
+      var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(currentM) + ':generateContent?key=' + encodeURIComponent(key);
 
-      if (res.ok) {
-        var data = await res.json();
-        var reply = '';
-        try {
-          reply = data.candidates[0].content.parts[0].text.trim();
-        } catch (e) {}
-        return {
-          success: true,
-          latency: latency,
-          model: m,
-          message: '🟢 連線成功！模型響應正常 (' + latency + 'ms)'
-        };
-      } else {
+      try {
+        var res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Ping' }] }]
+          })
+        });
+
+        var latency = Math.round(performance.now() - startTime);
+
+        if (res.ok) {
+          var isFallback = (currentM !== primaryModel);
+          if (isFallback) {
+            setSelectedModel(currentM);
+          }
+          return {
+            success: true,
+            latency: latency,
+            model: currentM,
+            is_fallback: isFallback,
+            message: isFallback
+              ? ('🟢 連線成功！(原模型「' + primaryModel + '」尖峰繁忙，已自動切換至備援「' + currentM + '」· ' + latency + 'ms)')
+              : ('🟢 連線成功！模型「' + currentM + '」響應正常 (' + latency + 'ms)')
+          };
+        }
+
         var errJson = await res.json().catch(function() { return {}; });
         var errDetail = (errJson.error && errJson.error.message) ? errJson.error.message : ('HTTP ' + res.status);
-        return {
-          success: false,
-          latency: latency,
-          message: '🔴 連線失敗：' + errDetail
-        };
+        lastErrorMessage = errDetail;
+
+        // 若為 API Key 無效，直接中斷回報
+        if (errDetail.indexOf('API_KEY_INVALID') !== -1 || (res.status === 400 && errDetail.indexOf('API key') !== -1)) {
+          return {
+            success: false,
+            latency: latency,
+            message: '🔴 金鑰無效：請確認複製的 Google AI Studio API Key 是否完整'
+          };
+        }
+
+        console.warn('⚠️ 模型 [' + currentM + '] 暫時繁忙或受限: ' + errDetail + '，正在嘗試備援模型...');
+      } catch (netErr) {
+        lastErrorMessage = netErr.message;
       }
-    } catch (netErr) {
-      return {
-        success: false,
-        message: '🔴 網路異常或跨域被阻擋：' + netErr.message
-      };
     }
+
+    var isHighDemand = lastErrorMessage.indexOf('high demand') !== -1 || lastErrorMessage.indexOf('503') !== -1;
+    var friendlyTip = isHighDemand
+      ? '⚠️ Google 官方伺服器目前尖峰塞車 (High Demand)。請稍候 1~2 分鐘再試，或點擊上方「🔄 線上同步此 Key 可用模型」重新選取其他模型！'
+      : ('🔴 連線失敗：' + lastErrorMessage);
+
+    return {
+      success: false,
+      message: friendlyTip
+    };
   }
 
   /**
-   * 使用 Gemini 進行書籍封面視覺 OCR 與實體辨識
+   * 使用 Gemini 進行書籍封面視覺 OCR 與實體辨識 (具備 High Demand 自動備援)
    */
   async function extractBookFromImage(imageBase64, mimeType, apiKey, model) {
     var key = apiKey || getGeminiKey();
-    var m = model || getSelectedModel();
+    var primaryModel = model || getSelectedModel() || 'gemini-2.5-flash';
 
     if (!key) throw new Error('缺少 Gemini API Key');
 
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent?key=' + encodeURIComponent(key);
+    var candidateModels = [primaryModel, 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    // 去重
+    candidateModels = candidateModels.filter(function(item, pos) {
+      return candidateModels.indexOf(item) === pos;
+    });
 
     var promptText = '你是一位專業的繁體中文圖書採購辨識專家。請仔細分析這張書籍封面照片，辨識出：1. 正確書名（主標題，忽略出版社徽標）2. 作者姓名 3. 出版社 4. 若封面上有 ISBN 條碼或數字請一併提取。請嚴格只輸出 JSON，格式如下：{"title":"書名","author":"作者","publisher":"出版社","isbn":""}，不要輸出任何額外解釋文字。';
 
-    var res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: promptText },
-            {
-              inline_data: {
-                mime_type: mimeType || 'image/jpeg',
-                data: imageBase64
-              }
-            }
-          ]
-        }],
-        generationConfig: {
-          response_mime_type: 'application/json'
-        }
-      })
-    });
+    var lastErr = null;
 
-    if (!res.ok) {
-      var errData = await res.json().catch(function() { return {}; });
-      throw new Error(errData.error && errData.error.message ? errData.error.message : ('HTTP ' + res.status));
+    for (var i = 0; i < candidateModels.length; i++) {
+      var currentM = candidateModels[i];
+      var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(currentM) + ':generateContent?key=' + encodeURIComponent(key);
+
+      try {
+        var res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: promptText },
+                {
+                  inline_data: {
+                    mime_type: mimeType || 'image/jpeg',
+                    data: imageBase64
+                  }
+                }
+              ]
+            }],
+            generationConfig: {
+              response_mime_type: 'application/json'
+            }
+          })
+        });
+
+        if (res.ok) {
+          var resultData = await res.json();
+          var rawText = resultData.candidates[0].content.parts[0].text;
+          var cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          return JSON.parse(cleaned);
+        }
+
+        var errData = await res.json().catch(function() { return {}; });
+        var msg = errData.error && errData.error.message ? errData.error.message : ('HTTP ' + res.status);
+        lastErr = new Error(msg);
+
+        // 如果是 High Demand (503 / 429)，自動降級至下一備援模型
+        if (msg.indexOf('high demand') !== -1 || res.status === 503 || res.status === 429) {
+          console.warn('⚠️ [' + currentM + '] 尖峰繁忙，自動切換至下一備援模型...');
+          continue;
+        } else {
+          throw lastErr;
+        }
+      } catch (e) {
+        lastErr = e;
+        if (e.message && e.message.indexOf('high demand') !== -1) {
+          continue;
+        }
+        throw e;
+      }
     }
 
-    var resultData = await res.json();
-    var rawText = resultData.candidates[0].content.parts[0].text;
-    
-    // 清理可能的 markdown codeblock
-    var cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned);
+    throw lastErr || new Error('Google AI 伺服器尖峰繁忙，請稍候重試');
   }
 
   /**
