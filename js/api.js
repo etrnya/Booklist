@@ -11,8 +11,20 @@ var BooklistApi = (function() {
   var STORAGE_AI_MODEL_KEY = 'booklist_ai_model';
   var STORAGE_NOTION_KEY = 'booklist_notion_key';
   var STORAGE_NOTION_DB_KEY = 'booklist_notion_db';
+  var STORAGE_VAULT_MODE_KEY = 'booklist_vault_mode'; // 'public' | 'private'
 
   var mockBooksCache = null;
+
+  function getVaultMode() {
+    return hasCustomBooks() ? 'private' : 'public';
+  }
+
+  function setVaultMode(mode) {
+    if (mode === 'public') {
+      clearCustomBooks();
+    }
+    mockBooksCache = null;
+  }
 
   function getGeminiKey() {
     return localStorage.getItem(STORAGE_GEMINI_KEY) || '';
@@ -27,7 +39,7 @@ var BooklistApi = (function() {
   }
 
   function getSelectedModel() {
-    return localStorage.getItem(STORAGE_AI_MODEL_KEY) || 'gemini-2.5-flash';
+    return localStorage.getItem(STORAGE_AI_MODEL_KEY) || 'gemini-3.8-flash';
   }
 
   function setSelectedModel(model) {
@@ -200,27 +212,54 @@ var BooklistApi = (function() {
     return { success: false, found: false, book: null };
   }
 
+  var STORAGE_CUSTOM_BOOKS_KEY = 'booklist_private_books';
+
+  function hasCustomBooks() {
+    return !!localStorage.getItem(STORAGE_CUSTOM_BOOKS_KEY);
+  }
+
+  function saveCustomBooks(books) {
+    if (Array.isArray(books) && books.length > 0) {
+      localStorage.setItem(STORAGE_CUSTOM_BOOKS_KEY, JSON.stringify(books));
+      mockBooksCache = books;
+    }
+  }
+
+  function clearCustomBooks() {
+    localStorage.removeItem(STORAGE_CUSTOM_BOOKS_KEY);
+    mockBooksCache = null;
+  }
+
   /**
-   * 載入離線/快取示範書庫資料
+   * 載入離線/快取示範書庫資料 (優先讀取瀏覽器私密儲存區)
    */
   async function loadMockBooks() {
-    if (mockBooksCache) return mockBooksCache;
-
-    var stored = localStorage.getItem(STORAGE_MOCK_DATA_KEY);
-    if (stored) {
+    // 1. 優先讀取使用者私人匯入於 localStorage 的安全書庫
+    var customBooksRaw = localStorage.getItem(STORAGE_CUSTOM_BOOKS_KEY);
+    if (customBooksRaw) {
       try {
-        mockBooksCache = JSON.parse(stored);
-        return mockBooksCache;
-      } catch (e) {}
+        var parsed = JSON.parse(customBooksRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          mockBooksCache = parsed;
+          return mockBooksCache;
+        }
+      } catch (e) {
+        console.warn('⚠️ 解析本地自訂書庫失敗:', e);
+      }
     }
 
+    if (mockBooksCache) return mockBooksCache;
+
+    // 2. 否則載入公開展示的示範書庫 (絕不外洩個人購書)
     try {
       var res = await fetch('mock_books.json');
       if (res.ok) {
         mockBooksCache = await res.json();
         return mockBooksCache;
       }
-    } catch (err) {}
+    } catch (err) {
+      console.warn('⚠️ [BooklistApi] 讀取 mock_books.json 失敗:', err);
+    }
 
     mockBooksCache = [];
     return mockBooksCache;
@@ -511,6 +550,38 @@ var BooklistApi = (function() {
   }
 
   /**
+   * 線上獲取此 Gemini API Key 支援的所有模型清單
+   */
+  async function fetchAvailableModels(apiKey) {
+    var key = (apiKey || getGeminiKey() || '').trim();
+    if (!key) throw new Error('請先輸入 Gemini API Key');
+
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key);
+    var res = await fetch(url);
+    if (!res.ok) {
+      var err = await res.json().catch(function() { return {}; });
+      throw new Error((err.error && err.error.message) ? err.error.message : ('HTTP ' + res.status));
+    }
+
+    var data = await res.json();
+    var models = (data.models || [])
+      .filter(function(m) {
+        var methods = m.supportedGenerationMethods || [];
+        var name = m.name || '';
+        return methods.includes('generateContent') && name.includes('gemini');
+      })
+      .map(function(m) {
+        var cleanId = m.name.replace(/^models\//, '');
+        return {
+          id: cleanId,
+          displayName: m.displayName ? (m.displayName + ' (' + cleanId + ')') : cleanId
+        };
+      });
+
+    return models;
+  }
+
+  /**
    * 批次自動補全
    */
   async function batchEnrich() {
@@ -529,6 +600,8 @@ var BooklistApi = (function() {
   return {
     getToken: getToken,
     setToken: setToken,
+    getVaultMode: getVaultMode,
+    setVaultMode: setVaultMode,
     getGeminiKey: getGeminiKey,
     setGeminiKey: setGeminiKey,
     getSelectedModel: getSelectedModel,
@@ -537,6 +610,7 @@ var BooklistApi = (function() {
     setNotionKey: setNotionKey,
     getNotionDbId: getNotionDbId,
     setNotionDbId: setNotionDbId,
+    fetchAvailableModels: fetchAvailableModels,
     testGeminiConnection: testGeminiConnection,
     extractBookFromImage: extractBookFromImage,
     getApiBase: getApiBase,
@@ -549,6 +623,9 @@ var BooklistApi = (function() {
     resolveBook: resolveBook,
     batchEnrich: batchEnrich,
     loadMockBooks: loadMockBooks,
+    hasCustomBooks: hasCustomBooks,
+    saveCustomBooks: saveCustomBooks,
+    clearCustomBooks: clearCustomBooks,
     generateRequestId: generateRequestId
   };
 })();

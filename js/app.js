@@ -238,6 +238,17 @@ var App = (function() {
   /**
    * 刷新書架列表 (對齊 Notion 我的書櫃)
    */
+  function renderFallbackCover(title) {
+    var safeTitle = (title || '書本').substring(0, 4);
+    return '<div class="bookshelf-cover-fallback">' +
+      '<div class="fallback-icon">📖</div>' +
+      '<div class="fallback-text">' + safeTitle + '</div>' +
+    '</div>';
+  }
+
+  /**
+   * 刷新書架列表 (對齊 Notion 我的書櫃與離線種子庫)
+   */
   async function refreshBookshelf() {
     var listContainer = document.getElementById('bookshelf-list');
     var totalBadge = document.getElementById('stat-total-books');
@@ -247,23 +258,41 @@ var App = (function() {
     if (totalBadge) totalBadge.textContent = books.length + ' 本';
 
     listContainer.innerHTML = '';
-    if (books.length === 0) {
-      listContainer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);">Notion 書櫃中尚無書籍紀錄</div>';
+    if (!books || books.length === 0) {
+      listContainer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);">書櫃中尚無書籍紀錄</div>';
       return;
     }
 
     books.forEach(function(b) {
       var card = document.createElement('div');
       card.className = 'bookshelf-card';
-      var cover = b.cover_url || 'https://via.placeholder.com/58x84/1e293b/64748b?text=Book';
+      
+      // 1. 智慧尋找或合成高解析封面
+      var rawCover = b.cover || b.cover_url || '';
+      var isbn = (b.isbn || b.isbn_13 || '').replace(/[^0-9X]/gi, '');
+      var coverSrc = rawCover;
+      if (!coverSrc && isbn && isbn.length >= 10) {
+        var lastDigit = isbn.slice(-1);
+        coverSrc = 'https://p6.sanmin.com.tw/promote_images/' + lastDigit + '/' + isbn + '.jpg';
+      }
+
       var formatLabel = (b.format || '紙本書');
       var authors = Array.isArray(b.authors) && b.authors.length ? b.authors.join(', ') : (b.author || '未知作者');
+      var safeTitle = b.title || '無書名';
+
+      // 2. 封面渲染：具備自動切換至純 CSS 幾何漸層封面機制 (杜絕破圖)
+      var coverHtml = '';
+      if (coverSrc) {
+        coverHtml = '<img class="bookshelf-cover" src="' + coverSrc + '" alt="' + safeTitle + '" loading="lazy" onerror="this.onerror=null; this.outerHTML=\'' + renderFallbackCover(safeTitle).replace(/'/g, "\\'") + '\';">';
+      } else {
+        coverHtml = renderFallbackCover(safeTitle);
+      }
 
       card.innerHTML = [
-        '<img class="bookshelf-cover" src="' + cover + '" alt="cover" loading="lazy" onerror="this.src=\'https://via.placeholder.com/58x84/1e293b/64748b?text=Cover\'">',
+        coverHtml,
         '<div class="bookshelf-details">',
           '<div>',
-            '<div class="bookshelf-title">' + (b.title || '無書名') + '</div>',
+            '<div class="bookshelf-title" title="' + safeTitle + '">' + safeTitle + '</div>',
             '<div class="bookshelf-author">' + authors + (b.publisher ? ' · ' + b.publisher : '') + '</div>',
           '</div>',
           '<div class="bookshelf-footer">',
@@ -278,7 +307,7 @@ var App = (function() {
           decision: 'DO_NOT_BUY',
           ownership_status: 'CURRENTLY_OWNED',
           reasons: [
-            '已在 Notion「我的書櫃」中持有本書',
+            '已在書櫃中持有本書',
             (b.isbn ? 'ISBN：' + b.isbn : '書名完全對齊'),
             '形式：' + formatLabel + '，狀態：' + (b.status || '準備讀')
           ],
@@ -325,9 +354,14 @@ var App = (function() {
 
   function updateConnectionStatus() {
     var statusEl = document.getElementById('header-status');
+    var mode = BooklistApi.getVaultMode();
     if (statusEl) {
       statusEl.className = 'header-status-badge';
-      statusEl.innerHTML = '<span class="status-dot"></span> Notion 書櫃連線 (45ff2f17)';
+      if (mode === 'private') {
+        statusEl.innerHTML = '<span class="status-dot" style="background:#10b981;"></span> 私人書庫已解鎖 (196 本)';
+      } else {
+        statusEl.innerHTML = '<span class="status-dot"></span> 公開展示模式 (示範書庫)';
+      }
     }
   }
 
@@ -361,10 +395,38 @@ var App = (function() {
     if (notionDbInput) notionDbInput.value = BooklistApi.getNotionDbId();
     if (testStatus) testStatus.innerHTML = '';
 
-    // 更新顯示的書庫藏書量
+    // 1. 同步隱私模式 UI
+    var hasCustom = BooklistApi.hasCustomBooks();
+    var vaultBadge = document.getElementById('vault-mode-badge');
+    var vaultDesc = document.getElementById('vault-mode-desc');
+    var resetBtn = document.getElementById('btn-reset-vault');
+
+    if (hasCustom) {
+      if (vaultBadge) {
+        vaultBadge.textContent = '私人解鎖模式 (自訂書庫)';
+        vaultBadge.style.background = 'rgba(16, 185, 129, 0.2)';
+        vaultBadge.style.color = '#10b981';
+      }
+      if (vaultDesc) {
+        vaultDesc.textContent = '目前已載入您匯入的個人私人購書庫。此資料 100% 僅儲存在您本機瀏覽器，絕不上傳雲端。';
+      }
+      if (resetBtn) resetBtn.style.display = 'inline-block';
+    } else {
+      if (vaultBadge) {
+        vaultBadge.textContent = '公開展示模式';
+        vaultBadge.style.background = 'rgba(56, 189, 248, 0.2)';
+        vaultBadge.style.color = '#38bdf8';
+      }
+      if (vaultDesc) {
+        vaultDesc.textContent = '目前處於公開展示模式（載入公共示範書庫），他人開啟此網頁絕不會看見您的私人購書紀錄。';
+      }
+      if (resetBtn) resetBtn.style.display = 'none';
+    }
+
+    // 2. 更新顯示的書庫藏書量
     BooklistApi.loadMockBooks().then(function(books) {
       if (countEl && books) {
-        countEl.textContent = '已收錄 ' + books.length + ' 本真實藏書 (支援 100% 離線查重)';
+        countEl.textContent = '已收錄 ' + books.length + ' 本藏書 (支援 100% 離線查重)';
       }
     });
 
@@ -378,7 +440,7 @@ var App = (function() {
 
   function saveSettings() {
     var geminiKey = (document.getElementById('setting-gemini-key') || {}).value || '';
-    var model = (document.getElementById('setting-ai-model') || {}).value || 'gemini-2.5-flash';
+    var model = (document.getElementById('setting-ai-model') || {}).value || 'gemini-3.8-flash';
     var notionKey = (document.getElementById('setting-notion-key') || {}).value || '';
     var notionDb = (document.getElementById('setting-notion-db') || {}).value || '';
 
@@ -392,9 +454,125 @@ var App = (function() {
     alert('✅ 系統與 AI 設定已儲存成功！');
   }
 
+  /**
+   * 匯入個人書庫檔案 (JSON)
+   */
+  function importVaultFile(event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var parsed = JSON.parse(e.target.result);
+        if (!Array.isArray(parsed)) {
+          alert('❌ 檔案格式錯誤：JSON 頂層必須為書籍陣列！');
+          return;
+        }
+        BooklistApi.saveCustomBooks(parsed);
+        alert('🎉 成功匯入 ' + parsed.length + ' 本個人藏書！已安全存入本地私密沙盒。');
+        openSettingsModal();
+        refreshBookshelf();
+        updateConnectionStatus();
+      } catch (err) {
+        alert('❌ 讀取 JSON 失敗: ' + err.message);
+      } finally {
+        event.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  /**
+   * 匯出備份目前書庫
+   */
+  async function exportVaultFile() {
+    var books = await BooklistApi.loadMockBooks();
+    var blob = new Blob([JSON.stringify(books, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'my_booklist_backup.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /**
+   * 還原為公開展示模式
+   */
+  function resetToPublicVault() {
+    if (!confirm('確定要清除本地匯入的個人書庫，還原為公共示範模式嗎？\n（您隨時可以再次透過 JSON 匯入）')) return;
+    BooklistApi.clearCustomBooks();
+    alert('✅ 已重置！目前處於安全的公開展示模式。');
+    openSettingsModal();
+    refreshBookshelf();
+    updateConnectionStatus();
+  }
+
+  /**
+   * 切換 API Key 教學抽屜折疊
+   */
+  function toggleApiGuide() {
+    var guide = document.getElementById('api-key-guide');
+    if (!guide) return;
+    if (guide.style.display === 'none' || !guide.style.display) {
+      guide.style.display = 'block';
+    } else {
+      guide.style.display = 'none';
+    }
+  }
+
+  /**
+   * 線上同步目前 Gemini API Key 所支援的模型清單
+   */
+  async function syncAvailableModels() {
+    var key = (document.getElementById('setting-gemini-key') || {}).value || BooklistApi.getGeminiKey();
+    var selectEl = document.getElementById('setting-ai-model');
+    var statusEl = document.getElementById('ai-test-status');
+
+    if (!key.trim()) {
+      alert('請先在下方輸入框貼上 Google Gemini API Key，再點擊同步！');
+      return;
+    }
+
+    if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-dim);">正在查詢此金鑰可用之官方模型...</span>';
+
+    try {
+      var models = await BooklistApi.fetchAvailableModels(key.trim());
+      if (models && models.length > 0) {
+        var currentVal = selectEl ? selectEl.value : '';
+        if (selectEl) {
+          selectEl.innerHTML = '';
+          models.forEach(function(m) {
+            var opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.displayName;
+            if (m.id === currentVal || (m.id === 'gemini-3.8-flash' && !currentVal)) {
+              opt.selected = true;
+            }
+            selectEl.appendChild(opt);
+          });
+        }
+        if (statusEl) {
+          statusEl.innerHTML = '<span style="color: #10b981; font-weight: 600;">✅ 已同步 ' + models.length + ' 個官方可用模型！</span>';
+        }
+      } else {
+        if (statusEl) {
+          statusEl.innerHTML = '<span style="color: #ef4444;">未找到支援 generateContent 的模型</span>';
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.innerHTML = '<span style="color: #ef4444;">同步失敗: ' + err.message + '</span>';
+      }
+    }
+  }
+
   async function testAiConnection() {
     var key = (document.getElementById('setting-gemini-key') || {}).value || '';
-    var model = (document.getElementById('setting-ai-model') || {}).value || 'gemini-2.5-flash';
+    var model = (document.getElementById('setting-ai-model') || {}).value || 'gemini-3.8-flash';
     var statusEl = document.getElementById('ai-test-status');
     var testBtn = document.getElementById('btn-test-ai');
 
@@ -466,6 +644,11 @@ var App = (function() {
     openSettingsModal: openSettingsModal,
     closeSettingsModal: closeSettingsModal,
     saveSettings: saveSettings,
+    importVaultFile: importVaultFile,
+    exportVaultFile: exportVaultFile,
+    resetToPublicVault: resetToPublicVault,
+    toggleApiGuide: toggleApiGuide,
+    syncAvailableModels: syncAvailableModels,
     testAiConnection: testAiConnection,
     toggleKeyVisibility: toggleKeyVisibility,
     refreshBookshelf: refreshBookshelf,
