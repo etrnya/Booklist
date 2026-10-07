@@ -9,6 +9,8 @@ desktop.ini
 *.key
 *.pem
 private_vault_seed.json
+my_notion_books.json
+my_books*.json
 *.xlsx
 
 # IDE & Editor caches

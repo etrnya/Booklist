@@ -651,6 +651,77 @@ var BooklistApi = (function() {
     return { success: false };
   }
 
+  /**
+   * 測試 Notion 書櫃連線 (支援本地代理與純靜態環境偵測)
+   */
+  async function testNotionConnection(token, dbId) {
+    var t = (token || getNotionKey() || '').trim();
+    var db = (dbId || getNotionDbId() || '').trim().replace(/-/g, '');
+
+    if (!t) {
+      return { success: false, message: '⚠️ 請先輸入 Notion Integration Token' };
+    }
+    if (!db) {
+      return { success: false, message: '⚠️ 請先輸入 Notion Database ID' };
+    }
+
+    // 1. 若處於本地開發環境 (localhost / 127.0.0.1)，調用本地全端代理
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      try {
+        var base = getApiBase();
+        var lRes = await fetch(base + '/api/books');
+        if (lRes.ok) {
+          var lData = await lRes.json();
+          if (lData.success && lData.books) {
+            saveCustomBooks(lData.books);
+            return {
+              success: true,
+              count: lData.books.length,
+              message: '🟢 連線成功！已從 Notion 本地服務同步 ' + lData.books.length + ' 本書籍！'
+            };
+          }
+        }
+      } catch (e) {
+        console.warn('本地服務連線嘗試失敗:', e);
+      }
+    }
+
+    // 2. 在線上靜態環境 (GitHub Pages) 中檢驗
+    try {
+      var res = await fetch('https://api.notion.com/v1/databases/' + db, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + t,
+          'Notion-Version': '2022-06-28'
+        }
+      });
+
+      if (res.ok) {
+        var data = await res.json();
+        var title = (data.title && data.title[0] && data.title[0].plain_text) || '我的書櫃';
+        return {
+          success: true,
+          message: '🟢 連線成功！已成功連線 Notion 資料庫「' + title + '」'
+        };
+      } else {
+        if (res.status === 401) {
+          return { success: false, message: '🔴 認證失敗 (401)：Integration Token 無效或未被授權' };
+        } else if (res.status === 404) {
+          return { success: false, message: '🔴 找不到資料庫 (404)：請確認步驟 3 是否已在 Notion 頁面將此 Integration 授權連線 (Connections)' };
+        } else {
+          return { success: false, message: '🔴 連線異常 (HTTP ' + res.status + ')' };
+        }
+      }
+    } catch (netErr) {
+      // 捕捉瀏覽器 CORS 限制
+      return {
+        success: false,
+        is_cors: true,
+        message: '⚠️ 瀏覽器安全性限制 (CORS)：Notion 官方伺服器禁止純靜態網頁（如 GitHub Pages）直接存取 API。\n👉 線上同步建議：請在上方點擊「📥 匯入個人書庫 (.json)」載入您的書單（保證 100% 離線秒開且隱私絕不外洩），或於電腦本機啟動 python server.py 進行即時連線！'
+      };
+    }
+  }
+
   return {
     getToken: getToken,
     setToken: setToken,
@@ -666,6 +737,7 @@ var BooklistApi = (function() {
     setNotionDbId: setNotionDbId,
     fetchAvailableModels: fetchAvailableModels,
     testGeminiConnection: testGeminiConnection,
+    testNotionConnection: testNotionConnection,
     extractBookFromImage: extractBookFromImage,
     getApiBase: getApiBase,
     setApiBase: setApiBase,

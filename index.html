@@ -372,6 +372,14 @@
             <label class="form-label">Notion Database ID (32 位元碼)</label>
             <input type="text" id="setting-notion-db" class="form-input" placeholder="45ff2f178ffe4bf58d417fc0dfece19f" value="45ff2f17-8ffe-4bf5-8d41-7fc0dfece19f">
           </div>
+
+          <!-- 測試 Notion 連線按鈕與即時結果 -->
+          <div style="display: flex; gap: 10px; align-items: flex-start; margin-top: 8px;">
+            <button type="button" class="btn-secondary" id="btn-test-notion" onclick="App.testNotionConnection()" style="padding: 8px 14px; font-size: 0.82rem; display: flex; align-items: center; gap: 6px; white-space: nowrap; border-color: rgba(168, 85, 247, 0.4);">
+              <span>🧪</span> 測試 Notion 連線
+            </button>
+            <div id="notion-test-status" style="font-size: 0.78rem; color: var(--text-muted); flex: 1; min-height: 20px; line-height: 1.4;"></div>
+          </div>
         </div>
       </div>
 

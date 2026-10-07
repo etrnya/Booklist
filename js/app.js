@@ -416,6 +416,7 @@ var App = (function() {
     var notionKeyInput = document.getElementById('setting-notion-key');
     var notionDbInput = document.getElementById('setting-notion-db');
     var testStatus = document.getElementById('ai-test-status');
+    var notionStatus = document.getElementById('notion-test-status');
     var countEl = document.getElementById('setting-books-count');
 
     if (keyInput) keyInput.value = BooklistApi.getGeminiKey();
@@ -423,6 +424,7 @@ var App = (function() {
     if (notionKeyInput) notionKeyInput.value = BooklistApi.getNotionKey();
     if (notionDbInput) notionDbInput.value = BooklistApi.getNotionDbId();
     if (testStatus) testStatus.innerHTML = '';
+    if (notionStatus) notionStatus.innerHTML = '';
 
     // 1. 同步隱私模式 UI
     var hasCustom = BooklistApi.hasCustomBooks();
@@ -660,6 +662,55 @@ var App = (function() {
     }
   }
 
+  async function testNotionConnection() {
+    var key = (document.getElementById('setting-notion-key') || {}).value || '';
+    var dbId = (document.getElementById('setting-notion-db') || {}).value || '';
+    var statusEl = document.getElementById('notion-test-status');
+    var testBtn = document.getElementById('btn-test-notion');
+
+    if (!key.trim()) {
+      if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ 請先輸入 Notion Integration Token</span>';
+      return;
+    }
+    if (!dbId.trim()) {
+      if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ 請先輸入 Notion Database ID</span>';
+      return;
+    }
+
+    if (testBtn) {
+      testBtn.disabled = true;
+      testBtn.innerHTML = '<span>⏳</span> 測試連線中...';
+    }
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color: var(--text-dim);">正在連線 Notion API 伺服器...</span>';
+    }
+
+    try {
+      var result = await BooklistApi.testNotionConnection(key, dbId);
+      if (result.success) {
+        if (statusEl) {
+          statusEl.innerHTML = '<span style="color: #10b981; font-weight: 600;">' + result.message + '</span>';
+        }
+        refreshBookshelf();
+        updateConnectionStatus();
+      } else {
+        if (statusEl) {
+          var color = result.is_cors ? '#f59e0b' : '#ef4444';
+          statusEl.innerHTML = '<span style="color: ' + color + '; font-size: 0.73rem; white-space: pre-wrap; line-height: 1.4;">' + result.message + '</span>';
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.innerHTML = '<span style="color: #ef4444;">🔴 測試失敗: ' + err.message + '</span>';
+      }
+    } finally {
+      if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<span>🧪</span> 測試 Notion 連線';
+      }
+    }
+  }
+
   function toggleKeyVisibility(inputId, btn) {
     var input = document.getElementById(inputId);
     if (!input) return;
@@ -699,6 +750,7 @@ var App = (function() {
     toggleNotionGuide: toggleNotionGuide,
     syncAvailableModels: syncAvailableModels,
     testAiConnection: testAiConnection,
+    testNotionConnection: testNotionConnection,
     toggleKeyVisibility: toggleKeyVisibility,
     refreshBookshelf: refreshBookshelf,
     handleCoverError: handleCoverError,
