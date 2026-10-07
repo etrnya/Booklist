@@ -67,18 +67,60 @@ var BooklistApi = (function() {
   }
 
   /**
-   * 調用 google-books-tw-mcp 搜尋書籍
+   * 調用 google-books-tw-mcp 搜尋書籍 (具備前端客戶端備援)
    */
   async function searchBooks(query) {
     var base = getApiBase();
-    try {
-      var res = await fetch(base + '/api/search?q=' + encodeURIComponent(query));
-      if (res.ok) {
-        return await res.json();
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      try {
+        var res = await fetch(base + '/api/search?q=' + encodeURIComponent(query));
+        if (res.ok) {
+          var data = await res.json();
+          if (data && data.success && data.books && data.books.length > 0) {
+            return data;
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ [BooklistApi] 本地搜尋 API 失敗，切換至前端直連解析:', e);
       }
-    } catch (e) {
-      console.warn('⚠️ [BooklistApi] 搜尋 API 呼叫失敗:', e);
     }
+
+    // 前端直連 Google Books 公開端點 (支援 GitHub Pages 靜態運作)
+    try {
+      var gRes = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=5');
+      if (gRes.ok) {
+        var gData = await gRes.json();
+        var items = gData.items || [];
+        var books = items.map(function(item) {
+          var vi = item.volumeInfo || {};
+          var isbns = (vi.industryIdentifiers || []).map(function(id) { return id.identifier; });
+          var isbn13 = isbns.find(function(i) { return i.length === 13; }) || isbns[0] || '';
+          var cover = '';
+          if (vi.imageLinks) {
+            cover = (vi.imageLinks.thumbnail || vi.imageLinks.smallThumbnail || '').replace('http://', 'https://');
+          }
+          if (isbn13 && (!cover || cover.includes('zoom=1'))) {
+            var lastDigit = isbn13.slice(-1);
+            cover = 'https://p6.sanmin.com.tw/promote_images/' + lastDigit + '/' + isbn13 + '.jpg';
+          }
+          return {
+            title: vi.title || query,
+            authors: vi.authors || ['未知作者'],
+            publisher: vi.publisher || '未知出版社',
+            publishedDate: vi.publishedDate || '',
+            description: vi.description || '',
+            isbn: isbn13,
+            isbn_13: isbn13,
+            cover_url: cover,
+            preview_link: vi.previewLink || ''
+          };
+        });
+        return { success: true, count: books.length, books: books };
+      }
+    } catch (gErr) {
+      console.warn('⚠️ [BooklistApi] 前端直連 Google Books 失敗:', gErr);
+    }
+
     return { success: false, books: [] };
   }
 
@@ -87,14 +129,26 @@ var BooklistApi = (function() {
    */
   async function resolveBook(target) {
     var base = getApiBase();
-    try {
-      var res = await fetch(base + '/api/resolve?target=' + encodeURIComponent(target));
-      if (res.ok) {
-        return await res.json();
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      try {
+        var res = await fetch(base + '/api/resolve?target=' + encodeURIComponent(target));
+        if (res.ok) {
+          var data = await res.json();
+          if (data && data.success && data.found) {
+            return data;
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ [BooklistApi] 本地解析 API 失敗，切換至前端直連:', e);
       }
-    } catch (e) {
-      console.warn('⚠️ [BooklistApi] 解析 API 呼叫失敗:', e);
     }
+
+    // 前端備援解析
+    var s = await searchBooks(target);
+    if (s.success && s.books && s.books.length > 0) {
+      return { success: true, found: true, book: s.books[0] };
+    }
+
     return { success: false, found: false, book: null };
   }
 
