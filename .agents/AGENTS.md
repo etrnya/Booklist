@@ -60,3 +60,16 @@
 - ❌ OCR 全書內文擷取
 - ❌ 多使用者權限系統
 - ❌ 外部電商訂單自動同步爬蟲
+
+---
+
+## 5. 模型相容性與即時探查門禁 (Model Compatibility & Dynamic Discovery Gate)
+1. **嚴禁盲目硬編碼過期或退役舊模型**：在提供「選擇 AI 模型」或配置 Gemini API 時，AI 助理**必須主動聯網/查核當前時間點官方支援之主力模型**（2026 年以 `gemini-3.8-flash`、`gemini-3.6-flash`、`gemini-3.5-flash-lite` 為標準支援），不可使用已除役或受限之歷史模型。
+2. **強制提供動態探查與備援**：介面與 API 層必須實作 `models.list` 動態查詢端點，提供「🔄 線上同步此 Key 可用模型」按鈕，讓不同權限與不同國別的 API Key 能動態載入其實際具備 `generateContent` 權限之模型清單。
+
+---
+
+## 6. 隱私沙盒與個人書庫隔離 (Static Privacy Sandbox Invariant)
+1. **公開展示與個人私密隔離**：靜態託管平台（如 GitHub Pages）上，預設之 `mock_books.json` 必須僅包含大眾示範書目，嚴禁將個人真實歷史購書清單 commit 至公開 Git 倉庫。
+2. **純本地離線個人沙盒**：個人的購書數據僅能儲存於使用者本機 `localStorage`，並提供安全之本機 JSON 匯入、匯出備份與一鍵還原展示功能，確保他人開啟網頁時絕無法窺探站長個人的真實購書隱私。
+

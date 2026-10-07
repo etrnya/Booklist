@@ -1,51 +1,16 @@
 [
   {
-    "id": "DEMO-001",
-    "title": "原子習慣：細微改變帶來巨大成就的實證法則",
-    "author": "James Clear",
-    "publisher": "方智",
-    "isbn": "9789861755267",
+    "id": "DEMO-006",
+    "title": "思考，快與慢",
+    "author": "Daniel Kahneman",
+    "publisher": "天下文化",
+    "isbn": "9789863200512",
     "category": "心理勵志",
-    "status": "讀完",
-    "cover": "https://p6.sanmin.com.tw/promote_images/7/9789861755267.jpg",
-    "rating": 5,
-    "created_at": "2026-01-01T00:00:00Z"
-  },
-  {
-    "id": "DEMO-002",
-    "title": "被討厭的勇氣：自我啟發之父「阿德勒」的教導",
-    "author": "岸見一郎, 古賀史健",
-    "publisher": "究竟",
-    "isbn": "9789861371955",
-    "category": "心理勵志",
-    "status": "讀完",
-    "cover": "https://p6.sanmin.com.tw/promote_images/5/9789861371955.jpg",
-    "rating": 5,
-    "created_at": "2026-01-02T00:00:00Z"
-  },
-  {
-    "id": "DEMO-003",
-    "title": "窮查理的普通常識（增修版）：巴菲特50年智慧合夥人查理．蒙格的人生哲學",
-    "author": "Charles T. Munger",
-    "publisher": "商業周刊",
-    "isbn": "9789867778642",
-    "category": "商業理財",
-    "status": "正在讀",
-    "cover": "https://p6.sanmin.com.tw/promote_images/2/9789867778642.jpg",
-    "rating": 5,
-    "created_at": "2026-01-03T00:00:00Z"
-  },
-  {
-    "id": "DEMO-004",
-    "title": "刻意練習：原創者全面解析，比天賦更關鍵的學習法",
-    "author": "Anders Ericsson, Robert Pool",
-    "publisher": "方智",
-    "isbn": "9789861754604",
-    "category": "自我成長",
     "status": "準備讀",
-    "cover": "https://p6.sanmin.com.tw/promote_images/4/9789861754604.jpg",
+    "cover": "assets/covers/thinking_fast_slow.png",
     "rating": 5,
-    "created_at": "2026-01-04T00:00:00Z"
+    "purchased_at": "2026-03-15T14:30:00Z",
+    "created_at": "2026-03-15T14:30:00Z"
   },
   {
     "id": "DEMO-005",
@@ -55,20 +20,61 @@
     "isbn": "9789869766463",
     "category": "商業理財",
     "status": "讀完",
-    "cover": "https://p6.sanmin.com.tw/promote_images/3/9789869766463.jpg",
+    "cover": "assets/covers/compound_effect.png",
     "rating": 5,
-    "created_at": "2026-01-05T00:00:00Z"
+    "purchased_at": "2026-03-01T10:15:00Z",
+    "created_at": "2026-03-01T10:15:00Z"
   },
   {
-    "id": "DEMO-006",
-    "title": "思考，快與慢",
-    "author": "Daniel Kahneman",
-    "publisher": "天下文化",
-    "isbn": "9789863200512",
-    "category": "心理勵志",
+    "id": "DEMO-004",
+    "title": "刻意練習：原創者全面解析，比天賦更關鍵的學習法",
+    "author": "Anders Ericsson, Robert Pool",
+    "publisher": "方智",
+    "isbn": "9789861754604",
+    "category": "自我成長",
     "status": "準備讀",
-    "cover": "https://p6.sanmin.com.tw/promote_images/2/9789863200512.jpg",
+    "cover": "assets/covers/deliberate_practice.png",
     "rating": 5,
-    "created_at": "2026-01-06T00:00:00Z"
+    "purchased_at": "2026-02-18T16:00:00Z",
+    "created_at": "2026-02-18T16:00:00Z"
+  },
+  {
+    "id": "DEMO-003",
+    "title": "窮查理的普通常識（增修版）：巴菲特50年智慧合夥人查理．蒙格的人生哲學",
+    "author": "Charles T. Munger",
+    "publisher": "商業周刊",
+    "isbn": "9789867778642",
+    "category": "商業理財",
+    "status": "正在讀",
+    "cover": "assets/covers/poor_charlie.png",
+    "rating": 5,
+    "purchased_at": "2026-02-01T11:20:00Z",
+    "created_at": "2026-02-01T11:20:00Z"
+  },
+  {
+    "id": "DEMO-002",
+    "title": "被討厭的勇氣：自我啟發之父「阿德勒」的教導",
+    "author": "岸見一郎, 古賀史健",
+    "publisher": "究竟",
+    "isbn": "9789861371955",
+    "category": "心理勵志",
+    "status": "讀完",
+    "cover": "assets/covers/courage.png",
+    "rating": 5,
+    "purchased_at": "2026-01-15T09:40:00Z",
+    "created_at": "2026-01-15T09:40:00Z"
+  },
+  {
+    "id": "DEMO-001",
+    "title": "原子習慣：細微改變帶來巨大成就的實證法則",
+    "author": "James Clear",
+    "publisher": "方智",
+    "isbn": "9789861755267",
+    "category": "心理勵志",
+    "status": "讀完",
+    "cover": "assets/covers/atomic_habits.png",
+    "rating": 5,
+    "purchased_at": "2026-01-01T12:00:00Z",
+    "created_at": "2026-01-01T12:00:00Z"
   }
 ]

@@ -325,20 +325,50 @@
 
         <!-- 區塊二：Notion 書櫃同步設定 (選填) -->
         <div>
-          <div style="font-size: 0.9rem; font-weight: 700; color: #a855f7; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-            <span>📓</span> Notion 書櫃同步 (選填·連結個人書櫃)
+          <div style="font-size: 0.9rem; font-weight: 700; color: #a855f7; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <span>📓</span> Notion 書櫃同步 (選填·連結個人書櫃)
+            </span>
+            <button type="button" onclick="App.toggleNotionGuide()" style="background: none; border: none; font-size: 0.75rem; color: #c084fc; cursor: pointer; text-decoration: underline;">
+              📖 Notion 串接教學
+            </button>
+          </div>
+
+          <!-- 折疊教學抽屜 -->
+          <div id="notion-guide" style="display: none; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px; font-size: 0.78rem; line-height: 1.55; color: #e2e8f0;">
+            <div style="font-weight: 700; color: #d8b4fe; margin-bottom: 8px;">💡 Notion 書櫃 3 步驟串接指引：</div>
+            <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+              <li>
+                <strong>步驟 1：建立 Notion Integration (取得 API Token)</strong><br>
+                前往 <a href="https://www.notion.so/profile/integrations" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">Notion 官方開發者整合頁面 ↗</a>，點選「<strong>+ New integration</strong>」，輸入名稱（例如 <code>Booklist</code>），選取您的 Workspace，權限保持「Read content」與「Insert content」，建立後複製 <strong>Internal Integration Secret</strong>（格式如 <code>secret_...</code> 或 <code>ntn_...</code>），貼至下方 Token 欄位。
+              </li>
+              <li>
+                <strong>步驟 2：取得「我的書櫃」Database ID</strong><br>
+                在瀏覽器打開您的 Notion「我的書櫃」資料庫頁面，查看網址列：<br>
+                <code>https://www.notion.so/workspace/<b>45ff2f178ffe4bf58d417fc0dfece19f</b>?v=...</code><br>
+                複製斜線後、問號前的 <strong>32 位英數字元代碼</strong>，貼至下方 Database ID 欄位。
+              </li>
+              <li>
+                <strong>步驟 3：最關鍵！在 Notion 頁面授權連線</strong><br>
+                打開該 Notion 書櫃頁面 ➔ 點擊右上角「<strong>···</strong>」（選單） ➔ 點選「<strong>Connections</strong>」（或「Connect to / 新增連線」） ➔ 搜尋並選取您剛剛建立的 <code>Booklist</code> Integration 進行授權！<br>
+                <span style="color: #fbbf24;">⚠️ 若未在此步驟授權連線，Notion API 將會阻擋存取並回傳 404！</span>
+              </li>
+            </ol>
+            <div style="margin-top: 8px; font-size: 0.72rem; color: var(--text-dim);">
+              完成以上設定後點擊下方「💾 儲存設定」，系統即可直接與您的 Notion 雲端書櫃雙向連線！
+            </div>
           </div>
 
           <div class="form-group" style="margin-bottom: 12px;">
             <label class="form-label">Notion Integration Token (API Key)</label>
             <div style="position: relative; display: flex; align-items: center;">
-              <input type="password" id="setting-notion-key" class="form-input" placeholder="ntn_..." style="padding-right: 42px;">
+              <input type="password" id="setting-notion-key" class="form-input" placeholder="ntn_... 或 secret_..." style="padding-right: 42px;">
               <button type="button" class="icon-btn" onclick="App.toggleKeyVisibility('setting-notion-key', this)" style="position: absolute; right: 8px; background: none; border: none; font-size: 1rem; cursor: pointer; color: var(--text-dim);" title="顯示/隱藏">👁️</button>
             </div>
           </div>
 
           <div class="form-group" style="margin-bottom: 12px;">
-            <label class="form-label">Notion Database ID</label>
+            <label class="form-label">Notion Database ID (32 位元碼)</label>
             <input type="text" id="setting-notion-db" class="form-input" placeholder="45ff2f178ffe4bf58d417fc0dfece19f" value="45ff2f17-8ffe-4bf5-8d41-7fc0dfece19f">
           </div>
         </div>

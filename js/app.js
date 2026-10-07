@@ -239,7 +239,7 @@ var App = (function() {
    * 刷新書架列表 (對齊 Notion 我的書櫃)
    */
   function renderFallbackCover(title) {
-    var safeTitle = (title || '書本').substring(0, 4);
+    var safeTitle = (title || '書本').substring(0, 6);
     return '<div class="bookshelf-cover-fallback">' +
       '<div class="fallback-icon">📖</div>' +
       '<div class="fallback-text">' + safeTitle + '</div>' +
@@ -247,7 +247,20 @@ var App = (function() {
   }
 
   /**
-   * 刷新書架列表 (對齊 Notion 我的書櫃與離線種子庫)
+   * 處理書封載入失敗事件 (平滑替換為純 CSS 精緻書卡)
+   */
+  function handleCoverError(imgEl) {
+    if (!imgEl || !imgEl.parentNode) return;
+    var title = imgEl.getAttribute('alt') || '書本';
+    var safeTitle = title.substring(0, 6);
+    var fallback = document.createElement('div');
+    fallback.className = 'bookshelf-cover-fallback';
+    fallback.innerHTML = '<div class="fallback-icon">📖</div><div class="fallback-text">' + safeTitle + '</div>';
+    imgEl.parentNode.replaceChild(fallback, imgEl);
+  }
+
+  /**
+   * 刷新書架列表 (依購買日期新到舊排序)
    */
   async function refreshBookshelf() {
     var listContainer = document.getElementById('bookshelf-list');
@@ -255,7 +268,7 @@ var App = (function() {
     if (!listContainer) return;
 
     var books = await BooklistApi.fetchBookshelf();
-    if (totalBadge) totalBadge.textContent = books.length + ' 本';
+    if (totalBadge) totalBadge.textContent = (books ? books.length : 0) + ' 本';
 
     listContainer.innerHTML = '';
     if (!books || books.length === 0) {
@@ -263,27 +276,43 @@ var App = (function() {
       return;
     }
 
+    // 核心需求：依購買日期 / 建立日期新到舊 (降序，最新購買排在最前面)
+    books.sort(function(a, b) {
+      var dateA = a.purchased_at || a.created_at || a.date || a.order_date || '';
+      var dateB = b.purchased_at || b.created_at || b.date || b.order_date || '';
+      if (dateA && dateB) {
+        var timeA = new Date(dateA).getTime();
+        var timeB = new Date(dateB).getTime();
+        if (!isNaN(timeA) && !isNaN(timeB)) {
+          return timeB - timeA;
+        }
+      }
+      if (dateB) return 1;
+      if (dateA) return -1;
+      return 0;
+    });
+
     books.forEach(function(b) {
       var card = document.createElement('div');
       card.className = 'bookshelf-card';
       
-      // 1. 智慧尋找或合成高解析封面
-      var rawCover = b.cover || b.cover_url || '';
-      var isbn = (b.isbn || b.isbn_13 || '').replace(/[^0-9X]/gi, '');
-      var coverSrc = rawCover;
-      if (!coverSrc && isbn && isbn.length >= 10) {
-        var lastDigit = isbn.slice(-1);
-        coverSrc = 'https://p6.sanmin.com.tw/promote_images/' + lastDigit + '/' + isbn + '.jpg';
-      }
-
+      var coverSrc = b.cover || b.cover_url || '';
       var formatLabel = (b.format || '紙本書');
       var authors = Array.isArray(b.authors) && b.authors.length ? b.authors.join(', ') : (b.author || '未知作者');
       var safeTitle = b.title || '無書名';
 
-      // 2. 封面渲染：具備自動切換至純 CSS 幾何漸層封面機制 (杜絕破圖)
+      // 提取日期標籤 (YYYY-MM-DD)
+      var rawDate = b.purchased_at || b.created_at || '';
+      var dateLabel = '';
+      if (rawDate) {
+        var dMatch = rawDate.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (dMatch) dateLabel = ' · 📅 ' + dMatch[1];
+      }
+
+      // 封面渲染
       var coverHtml = '';
       if (coverSrc) {
-        coverHtml = '<img class="bookshelf-cover" src="' + coverSrc + '" alt="' + safeTitle + '" loading="lazy" onerror="this.onerror=null; this.outerHTML=\'' + renderFallbackCover(safeTitle).replace(/'/g, "\\'") + '\';">';
+        coverHtml = '<img class="bookshelf-cover" src="' + coverSrc + '" alt="' + safeTitle.replace(/"/g, '&quot;') + '" loading="lazy" onerror="App.handleCoverError(this)">';
       } else {
         coverHtml = renderFallbackCover(safeTitle);
       }
@@ -292,11 +321,11 @@ var App = (function() {
         coverHtml,
         '<div class="bookshelf-details">',
           '<div>',
-            '<div class="bookshelf-title" title="' + safeTitle + '">' + safeTitle + '</div>',
+            '<div class="bookshelf-title" title="' + safeTitle.replace(/"/g, '&quot;') + '">' + safeTitle + '</div>',
             '<div class="bookshelf-author">' + authors + (b.publisher ? ' · ' + b.publisher : '') + '</div>',
           '</div>',
           '<div class="bookshelf-footer">',
-            '<span>' + formatLabel + ' · ' + (b.status || '準備讀') + '</span>',
+            '<span>' + formatLabel + ' · ' + (b.status || '準備讀') + dateLabel + '</span>',
             '<span class="bookshelf-price">' + (b.isbn ? 'ISBN: ' + b.isbn : '') + '</span>',
           '</div>',
         '</div>'
@@ -517,11 +546,16 @@ var App = (function() {
   function toggleApiGuide() {
     var guide = document.getElementById('api-key-guide');
     if (!guide) return;
-    if (guide.style.display === 'none' || !guide.style.display) {
-      guide.style.display = 'block';
-    } else {
-      guide.style.display = 'none';
-    }
+    guide.style.display = (guide.style.display === 'none' || !guide.style.display) ? 'block' : 'none';
+  }
+
+  /**
+   * 切換 Notion 串接教學抽屜折疊
+   */
+  function toggleNotionGuide() {
+    var guide = document.getElementById('notion-guide');
+    if (!guide) return;
+    guide.style.display = (guide.style.display === 'none' || !guide.style.display) ? 'block' : 'none';
   }
 
   /**
@@ -648,10 +682,12 @@ var App = (function() {
     exportVaultFile: exportVaultFile,
     resetToPublicVault: resetToPublicVault,
     toggleApiGuide: toggleApiGuide,
+    toggleNotionGuide: toggleNotionGuide,
     syncAvailableModels: syncAvailableModels,
     testAiConnection: testAiConnection,
     toggleKeyVisibility: toggleKeyVisibility,
     refreshBookshelf: refreshBookshelf,
+    handleCoverError: handleCoverError,
     showLoading: showLoading,
     hideLoading: hideLoading
   };
