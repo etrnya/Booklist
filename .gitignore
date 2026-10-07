@@ -1,0 +1,24 @@
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and sensitive keys
+.env
+.env.local
+*.key
+*.pem
+
+# IDE & Editor caches
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / dependencies
+node_modules/
+npm-debug.log*
+
+# Build outputs
+dist/
+build/

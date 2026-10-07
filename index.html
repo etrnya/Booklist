@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Booklist — 智慧購書決策查重與個人書籍資產管理系統</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans & Noto Sans TC -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Ambient Light Effect -->
+  <div class="ambient-glow"></div>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="logo-area">
+      <span class="logo-icon">📚</span>
+      <h1 class="logo-text">Booklist</h1>
+    </div>
+
+    <div class="header-actions">
+      <div id="header-status" class="header-status-badge offline">
+        <span class="status-dot"></span> 離線展示
+      </div>
+      <button class="icon-btn" onclick="App.openSettingsModal()" title="設定">⚙️</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content">
+
+    <!-- ====================================================================
+         View 1: 查重首頁 (Home - The 10-Second Decision Hero)
+         ==================================================================== -->
+    <section id="view-home" class="view-panel active">
+      <div class="hero-section">
+        <p class="hero-subtitle">掏出手機 10 秒確認「我是不是已經有了？」</p>
+      </div>
+
+      <!-- 快速關鍵字/條碼文字搜尋欄 -->
+      <div class="search-bar-container">
+        <div class="search-input-wrapper">
+          <input type="text" id="main-search-input" class="search-input" placeholder="🔎 輸入書名、作者或 ISBN 查重..." autocomplete="off">
+          <button class="search-btn-icon" onclick="App.handleManualSearch(document.getElementById('main-search-input').value)">⏎</button>
+        </div>
+      </div>
+
+      <!-- 核心唯一主入口：超大相機拍照按鈕 -->
+      <div class="camera-trigger-container">
+        <button id="btn-camera-trigger" class="giant-camera-btn" aria-label="拍這本書查重">
+          <div class="camera-icon-wrapper">📸</div>
+          <span class="camera-btn-text">拍這本書查重</span>
+        </button>
+        <p class="camera-hint">支援拍攝書籍封面或封底 ISBN 條碼</p>
+        <input type="file" id="camera-file-input" class="visually-hidden" accept="image/*" capture="environment">
+      </div>
+
+      <!-- 統計資訊列 -->
+      <div class="stats-bar">
+        <div class="stat-chip">
+          <span class="stat-icon">⚡</span>
+          <div>
+            <div class="stat-label">今日查重</div>
+            <div id="stat-today-checks" class="stat-value">0 次</div>
+          </div>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-icon">📖</span>
+          <div>
+            <div class="stat-label">書庫藏書</div>
+            <div id="stat-total-books" class="stat-value">0 本</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 20 本驗收實測快速展示列 -->
+      <div class="test-suite-card">
+        <div class="test-suite-header">
+          <span class="test-suite-title">🧪 實體圖書盲測案例 (TEST_CASES)</span>
+        </div>
+        <div class="test-chips-scroll">
+          <button class="test-chip" onclick="App.runTestCase('TC-01')">🔴 TC-01 原子習慣 (已持有)</button>
+          <button class="test-chip" onclick="App.runTestCase('TC-02')">🔴 TC-02 被討厭的勇氣 (封面)</button>
+          <button class="test-chip" onclick="App.runTestCase('TC-11')">🟡 TC-11 原子習慣 (欲購電子書)</button>
+          <button class="test-chip" onclick="App.runTestCase('TC-14')">🟡 TC-14 投資最重要(增訂版)</button>
+          <button class="test-chip" onclick="App.runTestCase('TC-16')">🟢 TC-16 晶片戰爭 (新書)</button>
+          <button class="test-chip" onclick="App.runTestCase('TC-E1')">🟡 TC-E1 窮查理 (歷史已售)</button>
+          <button class="test-chip" onclick="App.runTestCase('TC-E4')">⚪ TC-E4 斷網超時 (降級安全)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         View 2: 個人書庫列表 (Bookshelf)
+         ==================================================================== -->
+    <section id="view-bookshelf" class="view-panel">
+      <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+        <h2 style="font-size: 1.15rem; font-weight: 800;">📚 已持有書籍清單</h2>
+        <span style="font-size: 0.8rem; color: var(--text-dim);">點擊書籍可查看原購買細節</span>
+      </div>
+
+      <div id="bookshelf-list" class="bookshelf-grid">
+        <!-- 動態渲染書籍卡片 -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ====================================================================
+       Bottom Navigation Bar
+       ==================================================================== -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="home" onclick="App.switchTab('home')">
+      <span class="nav-icon">🔍</span>
+      <span class="nav-label">查重首頁</span>
+    </button>
+    <button class="nav-item" data-tab="bookshelf" onclick="App.switchTab('bookshelf')">
+      <span class="nav-icon">📚</span>
+      <span class="nav-label">個人書庫</span>
+    </button>
+    <button class="nav-item" onclick="App.openSettingsModal()">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">系統設定</span>
+    </button>
+  </nav>
+
+  <!-- ====================================================================
+       Modal 1: 查重決策卡片 (Decision Card Overlay)
+       ==================================================================== -->
+  <div id="decision-modal" class="modal-overlay">
+    <div class="decision-card">
+      <div id="decision-banner" class="decision-banner DO_NOT_BUY">
+        <span id="decision-badge" class="decision-badge">🚫 不建議購買</span>
+        <h2 id="decision-title" class="decision-title">您已持有此書！</h2>
+      </div>
+
+      <div class="decision-body">
+        <!-- 書籍預覽小卡 -->
+        <div class="book-preview-strip">
+          <img id="decision-book-cover" class="book-cover-img" src="" alt="Book Cover">
+          <div class="book-info-col">
+            <div id="decision-book-title" class="book-title-text">原子習慣</div>
+            <div id="decision-book-author" class="book-author-text">James Clear</div>
+            <div id="decision-meta-chips" class="book-meta-chips"></div>
+          </div>
+        </div>
+
+        <!-- 比對理由清單 -->
+        <div class="reasons-box">
+          <div class="reasons-heading">決策判斷理由 (Reasons)</div>
+          <ul id="decision-reasons-list" class="reasons-list"></ul>
+        </div>
+      </div>
+
+      <!-- 行動按鈕 -->
+      <div id="decision-actions" class="decision-actions"></div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       Modal 2: 快速登記購入入庫表單 (Quick Purchase Form Modal)
+       ==================================================================== -->
+  <div id="purchase-modal" class="modal-overlay">
+    <div class="decision-card">
+      <div class="decision-banner SAFE_TO_BUY" style="padding: 20px;">
+        <span class="decision-badge">🛒 快速入庫登記</span>
+        <h2 style="font-size: 1.2rem; font-weight: 700;">登記購買書籍</h2>
+      </div>
+
+      <div class="decision-body">
+        <div style="margin-bottom: 16px;">
+          <div id="pf-book-title" style="font-weight: 700; font-size: 1.05rem;"></div>
+          <div id="pf-book-author" style="font-size: 0.85rem; color: var(--text-muted);"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">書籍形式 (Format)</label>
+          <div class="chips-select-group">
+            <span class="chip-option chip-format selected" data-value="PHYSICAL">📘 實體書</span>
+            <span class="chip-option chip-format" data-value="EBOOK">📱 電子書</span>
+            <span class="chip-option chip-format" data-value="AUDIOBOOK">🎧 有聲書</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">購買通路 (Channel)</label>
+          <div class="chips-select-group">
+            <span class="chip-option chip-channel selected" data-value="博客來">博客來</span>
+            <span class="chip-option chip-channel" data-value="誠品">誠品</span>
+            <span class="chip-option chip-channel" data-value="Kobo">Kobo</span>
+            <span class="chip-option chip-channel" data-value="Readmoo">Readmoo</span>
+            <span class="chip-option chip-channel" data-value="實體書店">實體書店</span>
+            <span class="chip-option chip-channel" data-value="二手書店">二手書店</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">實付金額 (TWD)</label>
+          <input type="number" id="pf-price" class="form-input" value="320" placeholder="實付金額">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">備註說明 (選填)</label>
+          <input type="text" id="pf-notes" class="form-input" placeholder="例如：新書79折購入">
+        </div>
+      </div>
+
+      <div class="decision-actions">
+        <button class="btn-primary" onclick="DecisionUI.submitPurchase()">💾 儲存並寫入書庫 (排他鎖)</button>
+        <button class="btn-secondary" onclick="DecisionUI.closePurchaseModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       Modal 3: 系統連線設定 (Settings Modal)
+       ==================================================================== -->
+  <div id="settings-modal" class="modal-overlay">
+    <div class="decision-card">
+      <div style="padding: 20px; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="font-size: 1.1rem; font-weight: 700;">⚙️ 系統連線設定</h3>
+        <button class="icon-btn" onclick="App.closeSettingsModal()">✕</button>
+      </div>
+
+      <div class="decision-body">
+        <div class="form-group">
+          <label class="form-label">Google Apps Script Web App URL</label>
+          <input type="text" id="setting-gas-url" class="form-input" placeholder="https://script.google.com/macros/s/.../exec">
+          <p style="font-size: 0.72rem; color: var(--text-dim); margin-top: 4px;">留空則進入本地示範模式（包含 20 本驗收書籍）。</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">私人 App Token (加鹽雜湊認證)</label>
+          <input type="password" id="setting-app-token" class="form-input" placeholder="請輸入私人 Token">
+          <p style="font-size: 0.72rem; color: var(--text-dim); margin-top: 4px;">金鑰安全保存在手機 localStorage，嚴禁外洩。</p>
+        </div>
+      </div>
+
+      <div class="decision-actions">
+        <button class="btn-primary" onclick="App.saveSettings()">儲存連線設定</button>
+        <button class="btn-secondary" onclick="App.closeSettingsModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       Loading Overlay
+       ==================================================================== -->
+  <div id="app-loading" class="loading-indicator">
+    <div class="spinner"></div>
+    <div id="loading-message" class="loading-text">處理中...</div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/compressor.js"></script>
+  <script src="js/barcode.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/decision_ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
