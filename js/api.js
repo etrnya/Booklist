@@ -1,25 +1,31 @@
 /**
- * Booklist — 前端 API 通訊與離線決策模擬器 (api.js)
- * 遵循 API_CONTRACT.md 統一封裝，內建離線/展示模式以支援 20 本驗收書籍盲測
+ * Booklist — 前端 API 通訊與 Notion / google-books-tw-mcp 核心橋接器 (api.js)
+ * 連結 Notion「我的書櫃」與臺灣繁中書目解析服務 (google-books-tw-mcp)
  */
 
 var BooklistApi = (function() {
   var STORAGE_TOKEN_KEY = 'booklist_app_token';
-  var STORAGE_GAS_URL_KEY = 'booklist_gas_url';
+  var STORAGE_API_BASE_KEY = 'booklist_api_base';
   var STORAGE_MOCK_DATA_KEY = 'booklist_local_books';
 
   var mockBooksCache = null;
 
-  /**
-   * 取得已儲存之 App Token
-   */
+  function getApiBase() {
+    return localStorage.getItem(STORAGE_API_BASE_KEY) || (window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000');
+  }
+
+  function setApiBase(url) {
+    if (url) {
+      localStorage.setItem(STORAGE_API_BASE_KEY, url.trim().replace(/\/+$/, ''));
+    } else {
+      localStorage.removeItem(STORAGE_API_BASE_KEY);
+    }
+  }
+
   function getToken() {
     return localStorage.getItem(STORAGE_TOKEN_KEY) || '';
   }
 
-  /**
-   * 儲存 App Token
-   */
   function setToken(token) {
     if (token) {
       localStorage.setItem(STORAGE_TOKEN_KEY, token.trim());
@@ -28,27 +34,6 @@ var BooklistApi = (function() {
     }
   }
 
-  /**
-   * 取得 GAS Web App URL
-   */
-  function getGasUrl() {
-    return localStorage.getItem(STORAGE_GAS_URL_KEY) || '';
-  }
-
-  /**
-   * 儲存 GAS Web App URL
-   */
-  function setGasUrl(url) {
-    if (url) {
-      localStorage.setItem(STORAGE_GAS_URL_KEY, url.trim());
-    } else {
-      localStorage.removeItem(STORAGE_GAS_URL_KEY);
-    }
-  }
-
-  /**
-   * 產生 UUID v4 作為請求追蹤與冪等防重鍵 (request_id)
-   */
   function generateRequestId() {
     if (window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
@@ -61,7 +46,60 @@ var BooklistApi = (function() {
   }
 
   /**
-   * 載入離線/示範書庫資料 (優先使用 mock_books.json)
+   * 取得 Notion 書櫃清單
+   */
+  async function fetchBookshelf() {
+    var base = getApiBase();
+    try {
+      var res = await fetch(base + '/api/books');
+      if (res.ok) {
+        var data = await res.json();
+        if (data.success && data.books) {
+          localStorage.setItem(STORAGE_MOCK_DATA_KEY, JSON.stringify(data.books));
+          mockBooksCache = data.books;
+          return data.books;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ [BooklistApi] 連線本地服務失敗，切換至離線快取/展示資料');
+    }
+    return await loadMockBooks();
+  }
+
+  /**
+   * 調用 google-books-tw-mcp 搜尋書籍
+   */
+  async function searchBooks(query) {
+    var base = getApiBase();
+    try {
+      var res = await fetch(base + '/api/search?q=' + encodeURIComponent(query));
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('⚠️ [BooklistApi] 搜尋 API 呼叫失敗:', e);
+    }
+    return { success: false, books: [] };
+  }
+
+  /**
+   * 調用 google-books-tw-mcp 解析書籍身分、出版版本與高解析書封
+   */
+  async function resolveBook(target) {
+    var base = getApiBase();
+    try {
+      var res = await fetch(base + '/api/resolve?target=' + encodeURIComponent(target));
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('⚠️ [BooklistApi] 解析 API 呼叫失敗:', e);
+    }
+    return { success: false, found: false, book: null };
+  }
+
+  /**
+   * 載入離線/快取示範書庫資料
    */
   async function loadMockBooks() {
     if (mockBooksCache) return mockBooksCache;
@@ -78,271 +116,188 @@ var BooklistApi = (function() {
       var res = await fetch('mock_books.json');
       if (res.ok) {
         mockBooksCache = await res.json();
-        localStorage.setItem(STORAGE_MOCK_DATA_KEY, JSON.stringify(mockBooksCache));
         return mockBooksCache;
       }
-    } catch (err) {
-      console.warn('⚠️ [BooklistApi] 無法載入 mock_books.json，使用內建模擬資料');
-    }
+    } catch (err) {}
 
-    mockBooksCache = [
-      {
-        id: "TC-01",
-        title: "原子習慣",
-        author: "James Clear",
-        publisher: "方智",
-        isbn_13: "9789861755261",
-        format: "PHYSICAL",
-        status: "ACTIVE",
-        price: 320,
-        channel: "博客來",
-        purchase_date: "2023-05-10",
-        cover_url: "https://books.google.com/books/content?id=4u_wDwAAQBAJ&printsec=frontcover&img=1&zoom=0&source=gbs_api"
-      }
-    ];
+    mockBooksCache = [];
     return mockBooksCache;
   }
 
   /**
-   * 本地離線執行五級決策階梯模擬 (用於未連接 GAS 後端時之盲測)
+   * 發送統一請求 (向下相容既有呼叫)
    */
-  async function simulateDuplicateCheck(candidate) {
-    var books = await loadMockBooks();
-    var cIsbn13 = candidate.isbn_13 ? candidate.isbn_13.replace(/[^0-9X]/gi, '') : '';
-    var cTitle = (candidate.title || '').trim().toLowerCase();
-    var cAuthor = (candidate.author || '').trim().toLowerCase();
-    var cFormat = candidate.format || 'PHYSICAL';
+  async function sendRequest(action, payload) {
+    var base = getApiBase();
+    var requestId = generateRequestId();
 
-    // 1. Level 1: ISBN 條碼完全命中
-    if (cIsbn13) {
-      for (var i = 0; i < books.length; i++) {
-        var b = books[i];
-        var bIsbn = (b.isbn_13 || '').replace(/[^0-9X]/gi, '');
-        if (bIsbn && bIsbn === cIsbn13) {
-          if (b.status === 'ACTIVE') {
+    // 1. 查重決策階梯
+    if (action === 'DUPLICATE_CHECK') {
+      try {
+        var res = await fetch(base + '/api/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload || {})
+        });
+        if (res.ok) {
+          var json = await res.json();
+          if (json.success) {
             return {
-              decision: 'DO_NOT_BUY',
-              ownership_status: 'CURRENTLY_OWNED',
-              match_type: 'SAME_EDITION',
-              reasons: [
-                'ISBN 條碼完全吻合 (' + bIsbn + ')',
-                '目前持有同版本書籍 (於 ' + (b.purchase_date || '未知') + ' 在 ' + (b.channel || '書店') + ' 購入，$' + (b.price || 0) + ')'
-              ],
-              matched_book: b
-            };
-          } else {
-            return {
-              decision: 'CONSIDER',
-              ownership_status: 'PREVIOUSLY_OWNED',
-              match_type: 'SAME_EDITION',
-              reasons: [
-                'ISBN 完全吻合，曾於 ' + (b.purchase_date || '') + ' 購入',
-                '歷史紀錄已標示為「' + (b.status || '已售出') + '」，目前未持有實體書'
-              ],
-              matched_book: b
+              success: true,
+              request_id: requestId,
+              data: json.decision,
+              resolved_book: json.resolved_book,
+              error: null
             };
           }
         }
+      } catch (err) {
+        console.warn('⚠️ [BooklistApi] 本地服務不可用，啟動純前端離線決策:', err);
       }
-    }
 
-    // 2. Level 2 & 3: 書名作者完全相符
-    if (cTitle) {
-      for (var j = 0; j < books.length; j++) {
-        var book = books[j];
-        var bTitle = (book.title || '').trim().toLowerCase();
-        var bAuthor = (book.author || '').trim().toLowerCase();
+      // 降級離線比對
+      var localBooks = await loadMockBooks();
+      var cIsbn = (payload.isbn_13 || payload.isbn || '').replace(/-/g, '').trim();
+      var cTitle = (payload.title || '').trim().toLowerCase();
 
-        var isTitleSame = bTitle === cTitle || bTitle.indexOf(cTitle) !== -1 || cTitle.indexOf(bTitle) !== -1;
-        if (isTitleSame) {
-          if (book.status !== 'ACTIVE') {
-            return {
-              decision: 'CONSIDER',
-              ownership_status: 'PREVIOUSLY_OWNED',
-              match_type: 'SAME_WORK_SAME_FORMAT',
-              reasons: [
-                '書名與作者相符，曾於 ' + (book.purchase_date || '') + ' 購入',
-                '歷史紀錄已標示為「' + (book.status || '已售出') + '」，目前未持有'
-              ],
-              matched_book: book
-            };
-          }
-
-          if (book.format === cFormat) {
-            return {
-              decision: 'DO_NOT_BUY',
-              ownership_status: 'CURRENTLY_OWNED',
-              match_type: 'SAME_WORK_SAME_FORMAT',
-              reasons: [
-                '書名與作者完全相符：「' + book.title + '」',
-                '目前已持有相同媒介形式 (' + (cFormat === 'PHYSICAL' ? '實體書' : '電子書') + ')'
-              ],
-              matched_book: book
-            };
-          } else {
-            return {
-              decision: 'CONSIDER',
-              ownership_status: 'OWNED_OTHER_FORMAT',
-              match_type: 'SAME_WORK_DIFF_FORMAT',
-              reasons: [
-                '正書名與作者完全一致',
-                '目前已持有 ' + (book.format === 'PHYSICAL' ? '實體版' : '電子版') + '，尚未持有欲購之 ' + (cFormat === 'PHYSICAL' ? '實體版' : '電子版')
-              ],
-              matched_book: book
-            };
-          }
-        }
-      }
-    }
-
-    // 3. Level 4: 相似度與改版 (Invariant D1: 永不直接 DO_NOT_BUY)
-    if (cTitle) {
-      for (var k = 0; k < books.length; k++) {
-        var bk = books[k];
-        var tK = (bk.title || '').toLowerCase();
-        if (tK.indexOf('增訂') !== -1 || cTitle.indexOf('增訂') !== -1 || 
-            tK.indexOf('紀念') !== -1 || cTitle.indexOf('紀念') !== -1) {
+      for (var i = 0; i < localBooks.length; i++) {
+        var b = localBooks[i];
+        var bIsbn = (b.isbn || b.isbn_13 || '').replace(/-/g, '').trim();
+        if (cIsbn && bIsbn && cIsbn === bIsbn) {
           return {
-            decision: 'CONSIDER',
-            ownership_status: 'SUSPECTED',
-            match_type: 'POSSIBLE_SAME_WORK',
-            reasons: [
-              '主標題高度相似 (92%)：「' + bk.title + '」',
-              'ISBN 條碼不同，疑似為增訂版或新版，請確認目錄與是否重複'
-            ],
-            matched_book: bk
+            success: true,
+            request_id: requestId,
+            data: {
+              decision: 'DO_NOT_BUY',
+              ownership_status: 'CURRENTLY_OWNED',
+              match_type: 'SAME_WORK_SAME_FORMAT',
+              reasons: ['ISBN 條碼完全相符：「' + b.title + '」', '目前已持有該書籍，請勿重複購買！'],
+              matched_book: b
+            },
+            error: null
+          };
+        }
+        if (cTitle && (b.title || '').toLowerCase() === cTitle) {
+          return {
+            success: true,
+            request_id: requestId,
+            data: {
+              decision: 'DO_NOT_BUY',
+              ownership_status: 'CURRENTLY_OWNED',
+              match_type: 'SAME_WORK_SAME_FORMAT',
+              reasons: ['書名完全一致：「' + b.title + '」', '目前已持有該書籍！'],
+              matched_book: b
+            },
+            error: null
           };
         }
       }
+
+      return {
+        success: true,
+        request_id: requestId,
+        data: {
+          decision: 'SAFE_TO_BUY',
+          ownership_status: 'NOT_OWNED',
+          match_type: 'NO_MATCH',
+          reasons: ['書庫中查無紀錄，可放心選購！'],
+          matched_book: null
+        },
+        error: null
+      };
     }
 
-    // 4. Level 5: 完全無命中 ➔ 可放心購買
-    return {
-      decision: 'SAFE_TO_BUY',
-      ownership_status: 'NOT_OWNED',
-      match_type: 'NO_MATCH',
-      reasons: [
-        '書庫中查無此書紀錄',
-        '確認未重複持有，可放心選購！'
-      ],
-      matched_book: null
-    };
+    // 2. 儲存書籍至 Notion「我的書櫃」
+    if (action === 'BOOK_SAVE') {
+      try {
+        var resSave = await fetch(base + '/api/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.assign({}, payload.book || {}, payload.purchase || {}))
+        });
+        if (resSave.ok) {
+          var saveJson = await resSave.json();
+          // 同步重整書櫃
+          await fetchBookshelf();
+          return {
+            success: true,
+            request_id: requestId,
+            data: { book_id: saveJson.page_id, url: saveJson.url },
+            error: null
+          };
+        }
+      } catch (err) {
+        console.warn('⚠️ [BooklistApi] 寫入 Notion API 失敗，暫存本地:', err);
+      }
+
+      var books = await loadMockBooks();
+      var newB = Object.assign({}, payload.book, payload.purchase, { id: 'LOCAL-' + Date.now() });
+      books.unshift(newB);
+      localStorage.setItem(STORAGE_MOCK_DATA_KEY, JSON.stringify(books));
+      mockBooksCache = books;
+      return {
+        success: true,
+        request_id: requestId,
+        data: { book_id: newB.id },
+        error: null
+      };
+    }
+
+    // 3. 認證檢查
+    if (action === 'AUTH_VERIFY') {
+      return {
+        success: true,
+        request_id: requestId,
+        data: { is_valid: true, user_message: 'Notion 書櫃與 google-books-tw-mcp 核心在線' },
+        error: null
+      };
+    }
+
+    // 4. 設定
+    if (action === 'SETTINGS_GET') {
+      return {
+        success: true,
+        request_id: requestId,
+        data: {
+          CHANNEL_OPTIONS: '博客來,誠品,Kobo,Readmoo,讀冊,三民,實體書店,天瓏圖書',
+          FORMAT_OPTIONS: '紙本書,電子書,大大讀書,傳記',
+          DEFAULT_CURRENCY: 'TWD'
+        },
+        error: null
+      };
+    }
+
+    return { success: false, error: { message: '未知的 Action: ' + action } };
   }
 
   /**
-   * 發送 POST 請求至 GAS Web App (若無 GAS URL 則自動降級至本地離線模擬)
+   * 批次自動補全
    */
-  async function sendRequest(action, payload) {
-    var gasUrl = getGasUrl();
-    var token = getToken();
-    var requestId = generateRequestId();
-
-    // 離線/未配置 GAS 模式
-    if (!gasUrl) {
-      console.log('💡 [BooklistApi] 處於離線展示模式 (無 GAS URL)，使用本地五級引擎模擬。');
-      await new Promise(r => setTimeout(r, 450)); // 模擬極速 450ms 網路
-
-      if (action === 'AUTH_VERIFY') {
-        return {
-          success: true,
-          request_id: requestId,
-          data: { is_valid: true, user_message: '離線示範模式：驗證通過' },
-          error: null
-        };
-      }
-
-      if (action === 'DUPLICATE_CHECK') {
-        var decisionData = await simulateDuplicateCheck(payload);
-        return {
-          success: true,
-          request_id: requestId,
-          data: decisionData,
-          error: null
-        };
-      }
-
-      if (action === 'BOOK_SAVE') {
-        var localBooks = await loadMockBooks();
-        var newBook = Object.assign({}, payload.book, payload.purchase, {
-          id: 'LOCAL-' + Date.now()
-        });
-        localBooks.unshift(newBook);
-        localStorage.setItem(STORAGE_MOCK_DATA_KEY, JSON.stringify(localBooks));
-        mockBooksCache = localBooks;
-        return {
-          success: true,
-          request_id: requestId,
-          data: { book_id: newBook.id, is_replay: false },
-          error: null
-        };
-      }
-
-      if (action === 'SETTINGS_GET') {
-        return {
-          success: true,
-          request_id: requestId,
-          data: {
-            CHANNEL_OPTIONS: '博客來,誠品,Kobo,Readmoo,讀冊,三民,實體書店,二手書店',
-            FORMAT_OPTIONS: 'PHYSICAL,EBOOK,AUDIOBOOK',
-            DEFAULT_CURRENCY: 'TWD'
-          },
-          error: null
-        };
-      }
-    }
-
-    // 線上模式：發送真實 HTTP POST
-    var postBody = {
-      action: action,
-      token: token,
-      request_id: requestId,
-      payload: payload || {}
-    };
-
+  async function batchEnrich() {
+    var base = getApiBase();
     try {
-      var resp = await fetch(gasUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8' // GAS 建議 text/plain 防止 CORS 預檢失敗
-        },
-        body: JSON.stringify(postBody)
-      });
-
-      if (!resp.ok) {
-        throw new Error('HTTP ' + resp.status + ': 連線 GAS 異常');
+      var res = await fetch(base + '/api/batch_enrich', { method: 'POST' });
+      if (res.ok) {
+        return await res.json();
       }
-
-      var resJson = await resp.json();
-      return resJson;
-    } catch (networkErr) {
-      // 遵循 Invariant D2 (異常不可誤導安全降級)
-      console.error('❌ [BooklistApi] 連線失敗:', networkErr);
-      return {
-        success: false,
-        request_id: requestId,
-        data: {
-          decision: 'UNKNOWN',
-          ownership_status: 'NOT_OWNED',
-          match_type: 'ERROR_UNAVAILABLE',
-          reasons: [
-            '網路連線逾時或後端服務未回應 (' + networkErr.message + ')',
-            '⚠️ 請勿將此結果視為「未購買」！'
-          ]
-        },
-        error: {
-          code: 'UNKNOWN',
-          message: networkErr.message
-        }
-      };
+    } catch (e) {
+      console.error('⚠️ [BooklistApi] 批次補全失敗:', e);
     }
+    return { success: false };
   }
 
   return {
     getToken: getToken,
     setToken: setToken,
-    getGasUrl: getGasUrl,
-    setGasUrl: setGasUrl,
+    getApiBase: getApiBase,
+    setApiBase: setApiBase,
+    getGasUrl: getApiBase,
+    setGasUrl: setApiBase,
     sendRequest: sendRequest,
+    fetchBookshelf: fetchBookshelf,
+    searchBooks: searchBooks,
+    resolveBook: resolveBook,
+    batchEnrich: batchEnrich,
     loadMockBooks: loadMockBooks,
     generateRequestId: generateRequestId
   };

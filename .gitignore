@@ -19,6 +19,10 @@ desktop.ini
 node_modules/
 npm-debug.log*
 
-# Build outputs
-dist/
-build/
+# Python & scratch files
+__pycache__/
+*.pyc
+sanmin.html
+test_*.py
+fetch_cover.py
+scan_notion_books.py

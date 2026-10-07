@@ -11,6 +11,16 @@ var DecisionUI = (function() {
    * 顯示全螢幕決策卡片
    */
   function showDecisionCard(candidate, resultData) {
+    // 若後端 google-books-tw-mcp 已解析出標準 Fact Layer，優先繼承
+    var rb = resultData.resolved_book;
+    if (rb) {
+      if (rb.work && rb.work.title) candidate.title = rb.work.title;
+      if (rb.work && rb.work.authors && rb.work.authors.length) candidate.author = rb.work.authors.join(', ');
+      if (rb.edition && rb.edition.publisher) candidate.publisher = rb.edition.publisher;
+      if (rb.identity && rb.identity.isbn_13) candidate.isbn_13 = rb.identity.isbn_13;
+      if (rb.cover && rb.cover.url) candidate.cover_url = rb.cover.url;
+    }
+
     currentCandidate = candidate;
     currentDecisionData = resultData;
 
@@ -34,13 +44,13 @@ var DecisionUI = (function() {
     banner.className = 'decision-banner ' + decision;
 
     // 設定書籍預覽資料
-    bookTitle.textContent = matchedBook.title || candidate.title || '未知書名';
-    bookAuthor.textContent = matchedBook.author || candidate.author || '未知作者';
-    coverImg.src = matchedBook.cover_url || candidate.cover_url || 'https://via.placeholder.com/72x104/1e293b/64748b?text=Book';
+    bookTitle.textContent = candidate.title || matchedBook.title || '未知書名';
+    bookAuthor.textContent = candidate.author || matchedBook.author || '未知作者';
+    coverImg.src = candidate.cover_url || matchedBook.cover_url || 'https://via.placeholder.com/72x104/1e293b/64748b?text=Book';
 
     metaChips.innerHTML = '';
-    if (matchedBook.publisher || candidate.publisher) {
-      metaChips.innerHTML += '<span class="meta-chip">' + (matchedBook.publisher || candidate.publisher) + '</span>';
+    if (candidate.publisher || matchedBook.publisher) {
+      metaChips.innerHTML += '<span class="meta-chip">' + (candidate.publisher || matchedBook.publisher) + '</span>';
     }
     if (candidate.isbn_13 || (matchedBook && matchedBook.isbn_13)) {
       metaChips.innerHTML += '<span class="meta-chip">ISBN: ' + (candidate.isbn_13 || matchedBook.isbn_13) + '</span>';

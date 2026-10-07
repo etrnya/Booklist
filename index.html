@@ -28,9 +28,10 @@
     </div>
 
     <div class="header-actions">
-      <div id="header-status" class="header-status-badge offline">
-        <span class="status-dot"></span> 離線展示
+      <div id="header-status" class="header-status-badge">
+        <span class="status-dot"></span> Notion 書櫃連線
       </div>
+      <button class="icon-btn" onclick="App.triggerBatchEnrich()" title="一鍵批次補全 Notion 封面與 ISBN">🔄 批次補全</button>
       <button class="icon-btn" onclick="App.openSettingsModal()" title="設定">⚙️</button>
     </div>
   </header>

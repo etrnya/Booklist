@@ -3,10 +3,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/Version-v1.0.2-blue.svg)](https://github.com/etrnya/Booklist)
 [![Mobile PWA](https://img.shields.io/badge/Platform-Mobile%20PWA%20%2F%20RWD-green.svg)](https://etrnya.github.io/Booklist/)
-[![Backend](https://img.shields.io/badge/Backend-Google%20Apps%20Script-red.svg)](https://developers.google.com/apps-script)
+[![Database](https://img.shields.io/badge/Database-Notion%20Bookshelf-black.svg)](https://notion.so)
+[![Resolver](https://img.shields.io/badge/Resolver-google--books--tw--mcp%20v1.2.0-blue.svg)](https://github.com/etrnya/google-books-tw-mcp)
 [![Target](https://img.shields.io/badge/Target-Taiwan%20Traditional%20Chinese-orange.svg)](https://github.com/etrnya/Booklist)
 
-> 💡 **核心一句話定位**：**「Booklist：在你掏錢買書前，用 10 秒確認『我是不是已經有了？』」**
+> 💡 **核心一句話定位**：**「Booklist：在你掏錢買書前，用 10 秒確認『我是不是已經有了？』並將購書資產自動同步至 Notion 我的書櫃！」**
 
 ---
 
@@ -16,37 +17,45 @@
 - **重複購買同一本書**：買回家才發現書架上早有一模一樣的實體書，浪費金錢與收納空間。
 - **重複跨媒介購買**：明明已經買了電子書，逛書店時又順手買了實體版；或是想收電子書，卻忘記是否已持有實體版。
 - **買書現場時間極限**：在書店現場若手動輸入書名、ISBN 超過 1 分鐘就會放棄。系統必須在 **10 秒內** 給出明確「買 / 不買 / 考慮」決策。
+- **手動記錄書庫繁瑣**：在 Notion 手動建書、找封面與填寫出版社極為費時。
 
 ```text
-想買書 ➔ 📸 單一拍照 ➔ 條碼優先機器解析 (0 Token) ➔ 權威元資料檢索 ➔ 五級查重階梯 ➔ 10秒決策 (買/不買/考慮) ➔ 一鍵核簽入庫
+想買書 ➔ 📸 拍照或書名 ➔ google-books-tw-mcp 解析臺灣書目與高解析書封 ➔ 五級查重階梯 (比對 Notion) ➔ 10秒決策 (買/不買/考慮) ➔ 一鍵自動匯入 Notion 我的書櫃
 ```
 
 ---
 
 ## 🏛️ 系統整體架構 (System Architecture)
 
-完全摒棄肥大的伺服器架構，採用零主機費、極致輕量、隨開即用的無伺服器 (Serverless) 整合方案：
+以 **Notion「我的書櫃」** 為單一真實資料來源 (Single Source of Truth)，並整合專用繁中書目解析服務 **`google-books-tw-mcp`**：
 
 ```text
-               📱 行動裝置 (手機瀏覽器 PWA / GitHub Pages)
-                         │ (localStorage 自動夾帶 Token)
+               📱 行動裝置 / 桌面瀏覽器 (PWA / RWD)
+                         │ (http://localhost:3000)
         ┌────────────────┴────────────────┐
-        ▼ (情境 A: 唯一主入口 📸 拍照)   ▼ (情境 B: 次要 🔎 搜尋)
-     📸 拍這本書查重 (封面或條碼皆可)     🔎 書名 / 作者 / ISBN
+        ▼ (情境 A: 📸 拍照或掃描條碼)     ▼ (情境 B: 🔎 輸入書名 / ISBN)
+     📸 拍這本書查重 (封面或條碼皆可)     🔎 輸入書名 / 作者 / ISBN
         └────────────────┬────────────────┘
-                         │ (前端 Canvas 壓縮至 <500KB Base64 + app_token)
+                         │
                          ▼
-        ┌─────────────────────────────────────────────────┐
-        │  Google Apps Script (GAS Web App 後端代理)      │
-        │  • doGet()  : 提供行動端 HTML 或 API 狀態檢測   │
-        │  • doPost() : Salted Hash 驗證 ➔ 辨識 ➔ 查重 ➔ 鎖入庫 │
-        │  • Script Properties : 託管 API 金鑰與 Token Salt │
-        └───────────────┬─────────────────┬───────────────┘
-                        │                 │
-            ┌───────────┴───┐         ┌───┴───────────┐
-            ▼               ▼         ▼               ▼
-      Gemini 2.5 Flash Google Books  五級決策階梯   Google Sheet
-      (視覺文字擷取)  (權威元資料)  (決策+理由分析) (Books/Purchases)
+        ┌────────────────────────────────────────────────────────┐
+        │             Booklist Local Server (server.py)          │
+        │  • /api/search  : 搜尋臺灣繁體出版品清單               │
+        │  • /api/resolve : 一站式解析出版版本與高解析書封       │
+        │  • /api/check   : 五級決策階梯評估 (比對 Notion 書櫃) │
+        │  • /api/save    : 自動將新書、封面與中繼資料寫入 Notion│
+        │  • /api/batch_enrich : 一鍵掃描補全 Notion 現有書籍   │
+        └───────────────┬────────────────────────┬───────────────┘
+                        │                        │
+                        ▼                        ▼
+        ┌───────────────────────────────┐ ┌─────────────────────────┐
+        │     google-books-tw-mcp       │ │    Notion「我的書櫃」   │
+        │ (Taiwan Book Metadata Resolver│ │  (Database ID: 45ff2f17)│
+        │  • ISBN-10/13 Checksum 驗證   │ │  • Name (書名)          │
+        │  • Google Books 繁中精確提取  │ │  • 書封 (檔案與 Page 封面)
+        │  • 臺灣三民/天瓏 CDN 書封備援 │ │  • ISBN, 作者, 出版社   │
+        │  • 結構化 Fact Layer 輸出)    │ │  • 形式, 狀態, 購買日期 │
+        └───────────────────────────────┘ └─────────────────────────┘
 ```
 
 ---

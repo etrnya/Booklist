@@ -233,19 +233,19 @@ var App = (function() {
   }
 
   /**
-   * 刷新書架列表
+   * 刷新書架列表 (對齊 Notion 我的書櫃)
    */
   async function refreshBookshelf() {
     var listContainer = document.getElementById('bookshelf-list');
     var totalBadge = document.getElementById('stat-total-books');
     if (!listContainer) return;
 
-    var books = await BooklistApi.loadMockBooks();
+    var books = await BooklistApi.fetchBookshelf();
     if (totalBadge) totalBadge.textContent = books.length + ' 本';
 
     listContainer.innerHTML = '';
     if (books.length === 0) {
-      listContainer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);">書庫中尚無書籍紀錄</div>';
+      listContainer.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);">Notion 書櫃中尚無書籍紀錄</div>';
       return;
     }
 
@@ -253,30 +253,31 @@ var App = (function() {
       var card = document.createElement('div');
       card.className = 'bookshelf-card';
       var cover = b.cover_url || 'https://via.placeholder.com/58x84/1e293b/64748b?text=Book';
-      var formatLabel = b.format === 'PHYSICAL' ? '📘 實體書' : (b.format === 'EBOOK' ? '📱 電子書' : '🎧 有聲書');
+      var formatLabel = (b.format || '紙本書');
+      var authors = Array.isArray(b.authors) && b.authors.length ? b.authors.join(', ') : (b.author || '未知作者');
 
       card.innerHTML = [
-        '<img class="bookshelf-cover" src="' + cover + '" alt="cover" loading="lazy">',
+        '<img class="bookshelf-cover" src="' + cover + '" alt="cover" loading="lazy" onerror="this.src=\'https://via.placeholder.com/58x84/1e293b/64748b?text=Cover\'">',
         '<div class="bookshelf-details">',
           '<div>',
             '<div class="bookshelf-title">' + (b.title || '無書名') + '</div>',
-            '<div class="bookshelf-author">' + (b.author || '未知作者') + ' · ' + (b.publisher || '') + '</div>',
+            '<div class="bookshelf-author">' + authors + (b.publisher ? ' · ' + b.publisher : '') + '</div>',
           '</div>',
           '<div class="bookshelf-footer">',
-            '<span>' + formatLabel + ' · ' + (b.channel || '實體店') + '</span>',
-            '<span class="bookshelf-price">$' + (b.price || 0) + '</span>',
+            '<span>' + formatLabel + ' · ' + (b.status || '準備讀') + '</span>',
+            '<span class="bookshelf-price">' + (b.isbn ? 'ISBN: ' + b.isbn : '') + '</span>',
           '</div>',
         '</div>'
       ].join('');
 
       card.addEventListener('click', function() {
         DecisionUI.showDecisionCard(b, {
-          decision: b.status === 'ACTIVE' ? 'DO_NOT_BUY' : 'CONSIDER',
-          ownership_status: b.status === 'ACTIVE' ? 'CURRENTLY_OWNED' : 'PREVIOUSLY_OWNED',
+          decision: 'DO_NOT_BUY',
+          ownership_status: 'CURRENTLY_OWNED',
           reasons: [
-            '已持有本書 (' + (b.isbn_13 ? 'ISBN: ' + b.isbn_13 : '無條碼') + ')',
-            '購入日期：' + (b.purchase_date || '未記錄') + '，實付金額：$' + (b.price || 0),
-            '存放位置：' + (b.location || '書架')
+            '已在 Notion「我的書櫃」中持有本書',
+            (b.isbn ? 'ISBN：' + b.isbn : '書名完全對齊'),
+            '形式：' + formatLabel + '，狀態：' + (b.status || '準備讀')
           ],
           matched_book: b
         });
@@ -321,15 +322,22 @@ var App = (function() {
 
   function updateConnectionStatus() {
     var statusEl = document.getElementById('header-status');
-    var gasUrl = BooklistApi.getGasUrl();
     if (statusEl) {
-      if (gasUrl) {
-        statusEl.className = 'header-status-badge';
-        statusEl.innerHTML = '<span class="status-dot"></span> 雲端連線';
-      } else {
-        statusEl.className = 'header-status-badge offline';
-        statusEl.innerHTML = '<span class="status-dot"></span> 離線展示模式';
-      }
+      statusEl.className = 'header-status-badge';
+      statusEl.innerHTML = '<span class="status-dot"></span> Notion 書櫃連線 (45ff2f17)';
+    }
+  }
+
+  async function triggerBatchEnrich() {
+    if (!confirm('即將自動掃描 Notion 書庫中缺少書封或 ISBN 的書籍，並調用 google-books-tw-mcp 批次補全，是否開始？')) return;
+    showLoading('批次補全進行中，請稍候...');
+    var res = await BooklistApi.batchEnrich();
+    hideLoading();
+    if (res && res.success) {
+      alert('🎉 批次補全完成！掃描 ' + res.scanned_total + ' 本，成功補全 ' + res.enriched_count + ' 本！');
+      refreshBookshelf();
+    } else {
+      alert('❌ 批次補全未完成，請確認本地 server.py 正在運行。');
     }
   }
 
