@@ -7,8 +7,56 @@ var BooklistApi = (function() {
   var STORAGE_TOKEN_KEY = 'booklist_app_token';
   var STORAGE_API_BASE_KEY = 'booklist_api_base';
   var STORAGE_MOCK_DATA_KEY = 'booklist_local_books';
+  var STORAGE_GEMINI_KEY = 'booklist_gemini_api_key';
+  var STORAGE_AI_MODEL_KEY = 'booklist_ai_model';
+  var STORAGE_NOTION_KEY = 'booklist_notion_key';
+  var STORAGE_NOTION_DB_KEY = 'booklist_notion_db';
 
   var mockBooksCache = null;
+
+  function getGeminiKey() {
+    return localStorage.getItem(STORAGE_GEMINI_KEY) || '';
+  }
+
+  function setGeminiKey(key) {
+    if (key) {
+      localStorage.setItem(STORAGE_GEMINI_KEY, key.trim());
+    } else {
+      localStorage.removeItem(STORAGE_GEMINI_KEY);
+    }
+  }
+
+  function getSelectedModel() {
+    return localStorage.getItem(STORAGE_AI_MODEL_KEY) || 'gemini-2.5-flash';
+  }
+
+  function setSelectedModel(model) {
+    if (model) {
+      localStorage.setItem(STORAGE_AI_MODEL_KEY, model.trim());
+    }
+  }
+
+  function getNotionKey() {
+    return localStorage.getItem(STORAGE_NOTION_KEY) || '';
+  }
+
+  function setNotionKey(key) {
+    if (key) {
+      localStorage.setItem(STORAGE_NOTION_KEY, key.trim());
+    } else {
+      localStorage.removeItem(STORAGE_NOTION_KEY);
+    }
+  }
+
+  function getNotionDbId() {
+    return localStorage.getItem(STORAGE_NOTION_DB_KEY) || '45ff2f17-8ffe-4bf5-8d41-7fc0dfece19f';
+  }
+
+  function setNotionDbId(id) {
+    if (id) {
+      localStorage.setItem(STORAGE_NOTION_DB_KEY, id.trim());
+    }
+  }
 
   function getApiBase() {
     return localStorage.getItem(STORAGE_API_BASE_KEY) || (window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:3000');
@@ -297,7 +345,42 @@ var BooklistApi = (function() {
       };
     }
 
-    // 3. 認證檢查
+    // 3. 視覺辨識提取書名 (Vision OCR)
+    if (action === 'VISION_EXTRACT') {
+      var geminiKey = getGeminiKey();
+      var model = getSelectedModel();
+
+      if (!geminiKey) {
+        return {
+          success: false,
+          error: { message: '尚未設定 Google Gemini API Key。請至「⚙️ 系統設定」輸入金鑰以啟用拍照辨識。' }
+        };
+      }
+
+      try {
+        var visionResult = await extractBookFromImage(payload.image_base64, payload.mime_type, geminiKey, model);
+        if (visionResult && visionResult.title) {
+          return {
+            success: true,
+            request_id: requestId,
+            data: visionResult,
+            error: null
+          };
+        }
+      } catch (vErr) {
+        return {
+          success: false,
+          error: { message: vErr.message || 'AI 視覺辨識失敗，請檢查金鑰或改用手動搜尋' }
+        };
+      }
+
+      return {
+        success: false,
+        error: { message: '未能從相片辨識出清晰書名，請嘗試重新拍照或手動輸入' }
+      };
+    }
+
+    // 4. 認證檢查
     if (action === 'AUTH_VERIFY') {
       return {
         success: true,
@@ -307,7 +390,7 @@ var BooklistApi = (function() {
       };
     }
 
-    // 4. 設定
+    // 5. 設定
     if (action === 'SETTINGS_GET') {
       return {
         success: true,
@@ -322,6 +405,109 @@ var BooklistApi = (function() {
     }
 
     return { success: false, error: { message: '未知的 Action: ' + action } };
+  }
+
+  /**
+   * 測試 Google Gemini API 連線
+   */
+  async function testGeminiConnection(apiKey, model) {
+    var key = (apiKey || getGeminiKey() || '').trim();
+    var m = (model || getSelectedModel() || 'gemini-2.5-flash').trim();
+
+    if (!key) {
+      return { success: false, message: '請先輸入 Gemini API Key' };
+    }
+
+    var startTime = performance.now();
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent?key=' + encodeURIComponent(key);
+
+    try {
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: '請只回覆一個單詞：OK' }]
+          }]
+        })
+      });
+
+      var latency = Math.round(performance.now() - startTime);
+
+      if (res.ok) {
+        var data = await res.json();
+        var reply = '';
+        try {
+          reply = data.candidates[0].content.parts[0].text.trim();
+        } catch (e) {}
+        return {
+          success: true,
+          latency: latency,
+          model: m,
+          message: '🟢 連線成功！模型響應正常 (' + latency + 'ms)'
+        };
+      } else {
+        var errJson = await res.json().catch(function() { return {}; });
+        var errDetail = (errJson.error && errJson.error.message) ? errJson.error.message : ('HTTP ' + res.status);
+        return {
+          success: false,
+          latency: latency,
+          message: '🔴 連線失敗：' + errDetail
+        };
+      }
+    } catch (netErr) {
+      return {
+        success: false,
+        message: '🔴 網路異常或跨域被阻擋：' + netErr.message
+      };
+    }
+  }
+
+  /**
+   * 使用 Gemini 進行書籍封面視覺 OCR 與實體辨識
+   */
+  async function extractBookFromImage(imageBase64, mimeType, apiKey, model) {
+    var key = apiKey || getGeminiKey();
+    var m = model || getSelectedModel();
+
+    if (!key) throw new Error('缺少 Gemini API Key');
+
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent?key=' + encodeURIComponent(key);
+
+    var promptText = '你是一位專業的繁體中文圖書採購辨識專家。請仔細分析這張書籍封面照片，辨識出：1. 正確書名（主標題，忽略出版社徽標）2. 作者姓名 3. 出版社 4. 若封面上有 ISBN 條碼或數字請一併提取。請嚴格只輸出 JSON，格式如下：{"title":"書名","author":"作者","publisher":"出版社","isbn":""}，不要輸出任何額外解釋文字。';
+
+    var res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: promptText },
+            {
+              inline_data: {
+                mime_type: mimeType || 'image/jpeg',
+                data: imageBase64
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          response_mime_type: 'application/json'
+        }
+      })
+    });
+
+    if (!res.ok) {
+      var errData = await res.json().catch(function() { return {}; });
+      throw new Error(errData.error && errData.error.message ? errData.error.message : ('HTTP ' + res.status));
+    }
+
+    var resultData = await res.json();
+    var rawText = resultData.candidates[0].content.parts[0].text;
+    
+    // 清理可能的 markdown codeblock
+    var cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    return JSON.parse(cleaned);
   }
 
   /**
@@ -343,6 +529,16 @@ var BooklistApi = (function() {
   return {
     getToken: getToken,
     setToken: setToken,
+    getGeminiKey: getGeminiKey,
+    setGeminiKey: setGeminiKey,
+    getSelectedModel: getSelectedModel,
+    setSelectedModel: setSelectedModel,
+    getNotionKey: getNotionKey,
+    setNotionKey: setNotionKey,
+    getNotionDbId: getNotionDbId,
+    setNotionDbId: setNotionDbId,
+    testGeminiConnection: testGeminiConnection,
+    extractBookFromImage: extractBookFromImage,
     getApiBase: getApiBase,
     setApiBase: setApiBase,
     getGasUrl: getApiBase,

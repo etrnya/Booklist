@@ -127,24 +127,27 @@ var App = (function() {
       }
 
       var extracted = visionRes.data || {};
+      var extTitle = extracted.title || extracted.raw_title || '';
+      var extAuthor = extracted.author || extracted.raw_author || '';
+      var extIsbn = extracted.isbn || extracted.raw_isbn || '';
+
       console.log('📖 視覺擷取成果:', extracted);
       incrementCheckCount();
 
       // 4. 五級查重階梯
       showLoading('比對個人書庫與購買紀錄...');
       var dupRes = await BooklistApi.sendRequest('DUPLICATE_CHECK', {
-        isbn_13: extracted.raw_isbn,
-        title: extracted.raw_title,
-        author: extracted.raw_author,
+        isbn_13: extIsbn,
+        title: extTitle,
+        author: extAuthor,
         format: 'PHYSICAL'
       });
 
       hideLoading();
       DecisionUI.showDecisionCard({
-        title: extracted.raw_title,
-        author: extracted.raw_author,
-        publisher: extracted.raw_publisher,
-        isbn_13: extracted.raw_isbn
+        title: extTitle,
+        author: extAuthor,
+        isbn_13: extIsbn
       }, dupRes.data || {});
 
     } catch (err) {
@@ -343,25 +346,104 @@ var App = (function() {
 
   function openSettingsModal() {
     var modal = document.getElementById('settings-modal');
-    document.getElementById('setting-gas-url').value = BooklistApi.getGasUrl();
-    document.getElementById('setting-app-token').value = BooklistApi.getToken();
+    if (!modal) return;
+
+    var keyInput = document.getElementById('setting-gemini-key');
+    var modelSelect = document.getElementById('setting-ai-model');
+    var notionKeyInput = document.getElementById('setting-notion-key');
+    var notionDbInput = document.getElementById('setting-notion-db');
+    var testStatus = document.getElementById('ai-test-status');
+    var countEl = document.getElementById('setting-books-count');
+
+    if (keyInput) keyInput.value = BooklistApi.getGeminiKey();
+    if (modelSelect) modelSelect.value = BooklistApi.getSelectedModel();
+    if (notionKeyInput) notionKeyInput.value = BooklistApi.getNotionKey();
+    if (notionDbInput) notionDbInput.value = BooklistApi.getNotionDbId();
+    if (testStatus) testStatus.innerHTML = '';
+
+    // 更新顯示的書庫藏書量
+    BooklistApi.loadMockBooks().then(function(books) {
+      if (countEl && books) {
+        countEl.textContent = '已收錄 ' + books.length + ' 本真實藏書 (支援 100% 離線查重)';
+      }
+    });
+
     modal.classList.add('active');
   }
 
   function closeSettingsModal() {
-    document.getElementById('settings-modal').classList.remove('active');
+    var modal = document.getElementById('settings-modal');
+    if (modal) modal.classList.remove('active');
   }
 
   function saveSettings() {
-    var gasUrl = document.getElementById('setting-gas-url').value;
-    var token = document.getElementById('setting-app-token').value;
+    var geminiKey = (document.getElementById('setting-gemini-key') || {}).value || '';
+    var model = (document.getElementById('setting-ai-model') || {}).value || 'gemini-2.5-flash';
+    var notionKey = (document.getElementById('setting-notion-key') || {}).value || '';
+    var notionDb = (document.getElementById('setting-notion-db') || {}).value || '';
 
-    BooklistApi.setGasUrl(gasUrl);
-    BooklistApi.setToken(token);
+    BooklistApi.setGeminiKey(geminiKey);
+    BooklistApi.setSelectedModel(model);
+    BooklistApi.setNotionKey(notionKey);
+    BooklistApi.setNotionDbId(notionDb);
 
     updateConnectionStatus();
     closeSettingsModal();
-    alert('✅ 設定已儲存！');
+    alert('✅ 系統與 AI 設定已儲存成功！');
+  }
+
+  async function testAiConnection() {
+    var key = (document.getElementById('setting-gemini-key') || {}).value || '';
+    var model = (document.getElementById('setting-ai-model') || {}).value || 'gemini-2.5-flash';
+    var statusEl = document.getElementById('ai-test-status');
+    var testBtn = document.getElementById('btn-test-ai');
+
+    if (!key.trim()) {
+      if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ 請先貼上 Gemini API Key</span>';
+      return;
+    }
+
+    if (testBtn) {
+      testBtn.disabled = true;
+      testBtn.innerHTML = '<span>⏳</span> 測試連線中...';
+    }
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color: var(--text-dim);">正在連線 Google AI 伺服器...</span>';
+    }
+
+    try {
+      var result = await BooklistApi.testGeminiConnection(key, model);
+      if (result.success) {
+        if (statusEl) {
+          statusEl.innerHTML = '<span style="color: #10b981; font-weight: 600;">' + result.message + '</span>';
+        }
+      } else {
+        if (statusEl) {
+          statusEl.innerHTML = '<span style="color: #ef4444; font-size: 0.72rem; line-height: 1.2;">' + result.message + '</span>';
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.innerHTML = '<span style="color: #ef4444;">🔴 測試失敗: ' + err.message + '</span>';
+      }
+    } finally {
+      if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<span>🧪</span> 測試 AI 連線';
+      }
+    }
+  }
+
+  function toggleKeyVisibility(inputId, btn) {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      if (btn) btn.textContent = '🙈';
+    } else {
+      input.type = 'password';
+      if (btn) btn.textContent = '👁️';
+    }
   }
 
   function showLoading(msg) {
@@ -384,6 +466,8 @@ var App = (function() {
     openSettingsModal: openSettingsModal,
     closeSettingsModal: closeSettingsModal,
     saveSettings: saveSettings,
+    testAiConnection: testAiConnection,
+    toggleKeyVisibility: toggleKeyVisibility,
     refreshBookshelf: refreshBookshelf,
     showLoading: showLoading,
     hideLoading: hideLoading
